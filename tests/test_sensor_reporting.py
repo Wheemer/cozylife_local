@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import sys
 import types
@@ -61,3 +62,31 @@ def test_dpid_14_is_a_reporting_choice_not_seconds() -> None:
     assert coordinator._decode_sensor_report_interval(15) == 28800
     assert coordinator._decode_sensor_report_interval(600) is None
     assert coordinator._decode_sensor_report_interval(3600) == 3600
+
+
+def test_placeholder_sensor_response_is_resampled_without_legacy_option(
+    monkeypatch,
+) -> None:
+    """A placeholder response must enter wake sampling without old options."""
+    _, coordinator_module = _load_modules()
+
+    class Device:
+        ip_address = "192.0.2.1"
+
+        def __init__(self) -> None:
+            self.responses = [{"4": 0, "8": 0}, {"4": 48, "8": 215}]
+
+        async def async_get_state(self):
+            return self.responses.pop(0)
+
+    async def no_wait(_delay: float) -> None:
+        return None
+
+    instance = object.__new__(coordinator_module.CozyLifeCoordinator)
+    instance.device = Device()
+    instance.classification = types.SimpleNamespace(is_environment_sensor=True)
+    instance._uses_sensor_polling = True
+    instance._current_sensor_response_at = None
+    monkeypatch.setattr(coordinator_module.asyncio, "sleep", no_wait)
+
+    assert asyncio.run(instance._async_get_environment_state()) == {"4": 48, "8": 215}

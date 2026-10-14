@@ -330,15 +330,6 @@ class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if self._has_valid_environment_measurements(state_data):
             return state_data
 
-        if self._experimental_short_interval:
-            _LOGGER.debug(
-                "[COZYLIFE] Sensor %s returned placeholder environment "
-                "measurements; prioritizing experimental report interval "
-                "reinforcement for this short wake window",
-                self.device.ip_address,
-            )
-            return state_data
-
         end_time = time.monotonic() + SENSOR_WAKE_SAMPLE_SECONDS
         best_state = state_data
         while time.monotonic() < end_time:
