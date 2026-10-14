@@ -15,7 +15,6 @@ from homeassistant.core import HomeAssistant
 from .const import (
     BRIGHT,
     HUE,
-    KNOWN_SENSOR_PIDS,
     LIGHT_TYPE_CODE,
     PLUG_CURRENT,
     PLUG_ENERGY,
@@ -24,6 +23,7 @@ from .const import (
     RGB_LIGHT_TYPE_CODE,
     SAT,
     SENSOR_BATTERY,
+    SENSOR_HUMIDITY,
     SENSOR_TEMPERATURE,
     SWITCH,
     SWITCH_TYPE_CODE,
@@ -49,6 +49,25 @@ _SWITCH_NAME_MARKERS = (
 )
 _GENERIC_POWER_TYPE_CODES = {"05", "19"}
 _GENERIC_POWER_EXCLUDED_NAMES = ("doorbell", "detection", "tire pressure", "门铃")
+_DIRECT_LOCAL_NETWORK_TYPES = frozenset({"00", "02"})
+
+# These profiles are based on catalog product IDs and the DPID definitions
+# already used by this integration. A product profile is more reliable than
+# inferring a temperature/humidity device from an incidental DPID overlap.
+_TEMPERATURE_HUMIDITY_SENSOR_PIDS = frozenset(
+    {
+        "s1AxFq",
+        "nrQdBz",
+        "Z4tRml",
+        "bQ2cGF",
+        "JTFMlo",
+        "1iTgTJ",
+        "6yW0dI",
+        "2EKExY",
+        "suUl7T",
+    }
+)
+_MULTI_SENSOR_PIDS = frozenset({"t8nvdb"})
 _NAMED_GANG_COUNTS = {
     "one": 1,
     "two": 2,
@@ -78,6 +97,7 @@ class ModelInfo:
     type_name: str
     model_name: str | None
     dpids: frozenset[str]
+    network_type: str | None
 
 
 @dataclass(frozen=True)
@@ -88,7 +108,11 @@ class DeviceClassification:
     device_type_code: str | None
     effective_type_code: str | None
     source: str
+    is_direct_local: bool
     is_environment_sensor: bool
+    has_temperature_sensor: bool
+    has_humidity_sensor: bool
+    has_battery_sensor: bool
     is_sensor_category: bool
     is_light: bool
     is_switch: bool
@@ -135,6 +159,9 @@ def _load_model_catalog() -> dict[str, ModelInfo]:
                     or model.get("n")
                 ),
                 dpids=frozenset(str(dpid) for dpid in model.get("dpid", [])),
+                network_type=(
+                    str(model.get("net")) if model.get("net") is not None else None
+                ),
             )
 
     return catalog
@@ -227,14 +254,27 @@ def classify_device(
     model_info = get_model_info(pid)
     model_name = model_info.model_name if model_info else None
 
+    # The vendor app identifies 00 as Wi-Fi and 02 as Wi-Fi+BLE.
+    is_direct_local = not model_info or (
+        model_info.network_type in _DIRECT_LOCAL_NETWORK_TYPES
+    )
+
     is_environment_sensor = (
-        pid in KNOWN_SENSOR_PIDS
-        or (
-            SENSOR_TEMPERATURE in dpid_set
-            and SENSOR_BATTERY in dpid_set
-            and SWITCH not in dpid_set
+        is_direct_local
+        and (
+            pid in _TEMPERATURE_HUMIDITY_SENSOR_PIDS
+            or pid in _MULTI_SENSOR_PIDS
+            or (
+                SENSOR_TEMPERATURE in dpid_set
+                and SENSOR_HUMIDITY in dpid_set
+                and SENSOR_BATTERY in dpid_set
+                and SWITCH not in dpid_set
+            )
         )
     )
+    has_temperature_sensor = is_environment_sensor and SENSOR_TEMPERATURE in dpid_set
+    has_humidity_sensor = is_environment_sensor and SENSOR_HUMIDITY in dpid_set
+    has_battery_sensor = is_environment_sensor and SENSOR_BATTERY in dpid_set
 
     if model_info:
         effective_type_code = model_info.type_code
@@ -297,7 +337,11 @@ def classify_device(
         device_type_code=device_type_code,
         effective_type_code=effective_type_code,
         source=source,
+        is_direct_local=is_direct_local,
         is_environment_sensor=is_environment_sensor,
+        has_temperature_sensor=has_temperature_sensor,
+        has_humidity_sensor=has_humidity_sensor,
+        has_battery_sensor=has_battery_sensor,
         is_sensor_category=is_sensor_category,
         is_light=is_light,
         is_switch=is_switch,

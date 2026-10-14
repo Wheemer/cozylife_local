@@ -34,6 +34,28 @@ def _binary_sensor_descriptions(
     dpid_set = set(dpids)
     descriptions: list[BinarySensorDescription] = []
 
+    # t8nvdb is the catalog Wi-Fi multi-sensor. Existing entity semantics use
+    # DPID 6 for motion and DPID 7 for contact.
+    if "multi-sensor" in lower_name:
+        if "7" in dpid_set:
+            descriptions.append(
+                BinarySensorDescription(
+                    dpid="7",
+                    key="contact",
+                    name="Contact",
+                    device_class=BinarySensorDeviceClass.DOOR,
+                )
+            )
+        if "6" in dpid_set:
+            descriptions.append(
+                BinarySensorDescription(
+                    dpid="6",
+                    key="motion",
+                    name="Motion",
+                    device_class=BinarySensorDeviceClass.MOTION,
+                )
+            )
+
     if ("door" in lower_name or "magnet" in lower_name) and "7" in dpid_set:
         descriptions.append(
             BinarySensorDescription(
