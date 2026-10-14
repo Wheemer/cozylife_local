@@ -32,6 +32,7 @@ PLUG_LED_STATUS = '19'      # indicator LED behavior, enum
 PLUG_BACKLIGHT_STATUS = '20'  # backlight enable flag
 PLUG_CHILD_LOCK = '21'        # child-lock enable flag
 PLUG_ENERGY = '26'          # add_ele, scale 3, kWh
+PLUG_TOTAL_ENERGY = '42'    # total_ele, raw ÷1000 = kWh
 PLUG_CURRENT = '27'         # cur_current, mA
 PLUG_POWER = '28'           # cur_power, scale 1, W
 PLUG_VOLTAGE = '29'         # cur_voltage, scale 1, V

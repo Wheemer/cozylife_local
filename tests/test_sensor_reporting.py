@@ -155,6 +155,15 @@ def test_writable_options_use_only_device_advertised_dpids() -> None:
     assert options.supported_dpids(coordinator) == {"1", "9"}
 
 
+def test_total_energy_dpid_enables_plug_metering() -> None:
+    """The APK's total_ele DPID is a valid cumulative-metering field."""
+    discovery, _ = _load_modules()
+
+    classification = discovery.classify_device("unknown", "00", ["1", "42"])
+
+    assert classification.supports_plug_metering
+
+
 def test_metering_panel_boolean_options_match_the_apk() -> None:
     """The electrical panel names DPID 20, 21, and 32 as boolean controls."""
     switch = _load_switch_module()

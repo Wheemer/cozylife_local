@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -9,9 +8,9 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
-    EntityCategory,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    EntityCategory,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfEnergy,
@@ -25,13 +24,14 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
-    SENSOR_TEMPERATURE,
-    SENSOR_HUMIDITY,
-    SENSOR_BATTERY,
-    PLUG_ENERGY,
     PLUG_CURRENT,
+    PLUG_ENERGY,
     PLUG_POWER,
+    PLUG_TOTAL_ENERGY,
     PLUG_VOLTAGE,
+    SENSOR_BATTERY,
+    SENSOR_HUMIDITY,
+    SENSOR_TEMPERATURE,
 )
 from .coordinator import CozyLifeCoordinator
 from .discovery import get_model_info
@@ -69,6 +69,15 @@ async def async_setup_entry(
                 dpid=PLUG_ENERGY,
                 key="energy",
                 name="Energy",
+                device_class=SensorDeviceClass.ENERGY,
+                state_class=SensorStateClass.TOTAL_INCREASING,
+                native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+                scale=1000,
+            ),
+            PlugSensorDescription(
+                dpid=PLUG_TOTAL_ENERGY,
+                key="total_energy",
+                name="Total Energy",
                 device_class=SensorDeviceClass.ENERGY,
                 state_class=SensorStateClass.TOTAL_INCREASING,
                 native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
@@ -211,12 +220,12 @@ class CozyLifeSensorBase(
         except (TypeError, ValueError):
             return
 
-    def _native_value_from_data(self) -> Optional[float]:
+    def _native_value_from_data(self) -> float | None:
         """Return the current native value from coordinator data."""
         raise NotImplementedError
 
     @property
-    def native_value(self) -> Optional[float]:
+    def native_value(self) -> float | None:
         value = self._native_value_from_data()
         if value is not None:
             self._last_valid_native_value = value
@@ -236,7 +245,7 @@ class CozyLifeTemperatureSensor(CozyLifeSensorBase):
         super().__init__(coordinator, entry, "temperature")
         self._attr_name = f"{coordinator.device.device_model_name} Temperature"
 
-    def _native_value_from_data(self) -> Optional[float]:
+    def _native_value_from_data(self) -> float | None:
         raw = (self.coordinator.data or {}).get(SENSOR_TEMPERATURE)
         if raw is None:
             return None
@@ -254,7 +263,7 @@ class CozyLifeHumiditySensor(CozyLifeSensorBase):
         super().__init__(coordinator, entry, "humidity")
         self._attr_name = f"{coordinator.device.device_model_name} Humidity"
 
-    def _native_value_from_data(self) -> Optional[float]:
+    def _native_value_from_data(self) -> float | None:
         raw = (self.coordinator.data or {}).get(SENSOR_HUMIDITY)
         if raw is None:
             return None
@@ -273,7 +282,7 @@ class CozyLifeBatterySensor(CozyLifeSensorBase):
         super().__init__(coordinator, entry, "battery")
         self._attr_name = f"{coordinator.device.device_model_name} Battery"
 
-    def _native_value_from_data(self) -> Optional[float]:
+    def _native_value_from_data(self) -> float | None:
         raw = (self.coordinator.data or {}).get(SENSOR_BATTERY)
         if raw is None:
             return None
@@ -302,7 +311,7 @@ class CozyLifePlugSensor(CoordinatorEntity[CozyLifeCoordinator], SensorEntity):
         return _device_info(self.coordinator)
 
     @property
-    def native_value(self) -> Optional[float]:
+    def native_value(self) -> float | None:
         raw = self.coordinator.data.get(self._description.dpid)
         if raw is None:
             return None

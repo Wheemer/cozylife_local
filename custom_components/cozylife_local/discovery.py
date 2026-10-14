@@ -19,6 +19,7 @@ from .const import (
     PLUG_CURRENT,
     PLUG_ENERGY,
     PLUG_POWER,
+    PLUG_TOTAL_ENERGY,
     PLUG_VOLTAGE,
     RGB_LIGHT_TYPE_CODE,
     SAT,
@@ -33,7 +34,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 _MODEL_PATH = Path(__file__).with_name("model.json")
-_METERING_DPIDS = {PLUG_ENERGY, PLUG_CURRENT, PLUG_POWER, PLUG_VOLTAGE}
+_METERING_DPIDS = {PLUG_ENERGY, PLUG_CURRENT, PLUG_POWER, PLUG_VOLTAGE, PLUG_TOTAL_ENERGY}
 _SWITCH_GANG_DPIDS = ("2", "4", "6", "8", "10", "12", "14", "16")
 _OUTLET_NAME_MARKERS = ("plug", "socket", "outlet", "插座", "插板")
 _SWITCH_NAME_MARKERS = (
