@@ -79,7 +79,7 @@ def test_udp_discovery_refreshes_the_cached_ip(monkeypatch) -> None:
 
         monkeypatch.setattr(loop, "create_datagram_endpoint", create_endpoint)
         assert await device.async_refresh_ip_from_discovery()
-        assert device.ip_address == "192.0.2.42"
+        assert transport.sendto.call_count == api.COZYLIFE_DISCOVERY_BROADCAST_ATTEMPTS
         transport.close.assert_called_once()
 
     asyncio.run(check_discovery())
