@@ -34,6 +34,9 @@ def _load_modules():
         def __init__(self, coordinator=None) -> None:
             self.coordinator = coordinator
 
+        def async_write_ha_state(self) -> None:
+            return None
+
         @classmethod
         def __class_getitem__(cls, _item):
             return cls
@@ -161,6 +164,28 @@ def test_light_power_memory_options_match_the_apk() -> None:
         "On": 0,
         "Previous state": 1,
     }
+
+
+def test_dreamcolor_music_effect_matches_the_apk_payload() -> None:
+    """The app enters music mode four and writes the selected index."""
+    select = _load_select_module()
+    sent: list[dict[str, int]] = []
+
+    class Device:
+        device_model_name = "DreamColor"
+        device_id = "device"
+        pid = "pid"
+        ip_address = "192.0.2.1"
+
+        async def async_set_state(self, payload):
+            sent.append(payload)
+            return True
+
+    coordinator = types.SimpleNamespace(device=Device(), data={"15": 0})
+    entity = select.CozyLifeLightMusicSelect(coordinator)
+    asyncio.run(entity.async_select_option("Disco"))
+
+    assert sent == [{"2": 4, "15": 3}]
 
 
 def test_dreamcolor_rgb_order_options_match_the_apk() -> None:

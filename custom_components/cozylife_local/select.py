@@ -9,10 +9,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
+    LIGHT_MUSIC_INDEX,
     LIGHT_POWER_MEMORY,
     LIGHT_RGB_TURN,
     PLUG_LED_STATUS,
     PLUG_POWER_ON_STATE,
+    WORK_MODE,
 )
 from .coordinator import CozyLifeCoordinator
 from .schedule import (
@@ -61,6 +63,15 @@ LIGHT_RGB_TURN_OPTIONS = {
 }
 LIGHT_RGB_TURN_VALUES = {
     value: option for option, value in LIGHT_RGB_TURN_OPTIONS.items()
+}
+LIGHT_MUSIC_OPTIONS = {
+    "Classic": 0,
+    "Soft": 1,
+    "Dynamic": 2,
+    "Disco": 3,
+}
+LIGHT_MUSIC_VALUES = {
+    value: option for option, value in LIGHT_MUSIC_OPTIONS.items()
 }
 LED_STATUS_VALUES = {
     value: option for option, value in LED_STATUS_OPTIONS.items()
@@ -116,6 +127,8 @@ async def async_setup_entry(
             entities.append(CozyLifeLightPowerMemorySelect(coordinator))
         if LIGHT_RGB_TURN in dpids:
             entities.append(CozyLifeLightRgbTurnSelect(coordinator))
+        if {WORK_MODE, LIGHT_MUSIC_INDEX} <= dpids:
+            entities.append(CozyLifeLightMusicSelect(coordinator))
         if supports_light_schedule_options(coordinator):
             entities.extend(
                 [
@@ -455,6 +468,55 @@ class CozyLifeLightRgbTurnSelect(
         else:
             _LOGGER.warning(
                 "Failed to set LED color order for CozyLife device %s",
+                self.coordinator.device.ip_address,
+            )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
+
+
+class CozyLifeLightMusicSelect(
+    CoordinatorEntity[CozyLifeCoordinator],
+    SelectEntity,
+):
+    """Music effect mode from the bundled DreamColor panel."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_options = tuple(LIGHT_MUSIC_OPTIONS)
+    _attr_icon = "mdi:music"
+
+    def __init__(self, coordinator: CozyLifeCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = f"{coordinator.device.device_model_name} Music Effect"
+        self._attr_unique_id = f"{coordinator.device.device_id}_light_music_effect"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device.device_id)},
+            name=self.coordinator.device.device_model_name,
+            manufacturer="CozyLife",
+            model=self.coordinator.device.pid,
+        )
+
+    @property
+    def current_option(self) -> str | None:
+        raw = self.coordinator.data.get(LIGHT_MUSIC_INDEX)
+        try:
+            return LIGHT_MUSIC_VALUES.get(int(raw))
+        except (TypeError, ValueError):
+            return None
+
+    async def async_select_option(self, option: str) -> None:
+        value = LIGHT_MUSIC_OPTIONS[option]
+        payload = {WORK_MODE: 4, LIGHT_MUSIC_INDEX: value}
+        if await self.coordinator.device.async_set_state(payload):
+            self.coordinator.data.update(payload)
+            self.async_write_ha_state()
+        else:
+            _LOGGER.warning(
+                "Failed to set music effect for CozyLife device %s",
                 self.coordinator.device.ip_address,
             )
 
