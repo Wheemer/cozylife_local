@@ -42,13 +42,16 @@ DATA_SCHEMA = vol.Schema({
 })
 
 SLEEPING_SENSOR_PID = "Z4tRml"
+
+# APK model Z4tRml advertises the complete capability set below. Cache it when
+# manually adding a sleeping sensor so every source-backed entity is created
+# before the first wake; runtime values still come only from the device.
 SLEEPING_SENSOR_DPIDS = [
-    SENSOR_HUMIDITY,
-    SENSOR_TEMPERATURE,
-    SENSOR_BATTERY,
-    SENSOR_REPORT_INTERVAL_DPID,
-    SENSOR_HUMIDITY_SENSITIVITY_DPID,
-    SENSOR_TEMP_SENSITIVITY_DPID,
+    SENSOR_HUMIDITY, SENSOR_TEMPERATURE, SENSOR_BATTERY,
+    "12", "13", SENSOR_REPORT_INTERVAL_DPID,
+    "20", "21", "22", "23",
+    SENSOR_HUMIDITY_SENSITIVITY_DPID, SENSOR_TEMP_SENSITIVITY_DPID,
+    "26", "30",
 ]
 
 
