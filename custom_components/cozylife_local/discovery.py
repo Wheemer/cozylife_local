@@ -51,6 +51,7 @@ _SWITCH_NAME_MARKERS = (
 _GENERIC_POWER_TYPE_CODES = {"05", "19"}
 _GENERIC_POWER_EXCLUDED_NAMES = ("doorbell", "detection", "tire pressure", "门铃")
 _DIRECT_LOCAL_NETWORK_TYPES = frozenset({"00", "02"})
+_DEFAULT_DREAMCOLOR_PANEL = "2020121211331234"
 
 # These profiles are based on catalog product IDs and the DPID definitions
 # already used by this integration. A product profile is more reliable than
@@ -100,6 +101,7 @@ class ModelInfo:
     dpids: frozenset[str]
     network_type: str | None
     report_interval_seconds: int | None
+    panel_ids: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -165,6 +167,7 @@ def _load_model_catalog() -> dict[str, ModelInfo]:
                     str(model.get("net")) if model.get("net") is not None else None
                 ),
                 report_interval_seconds=_model_report_interval(model),
+                panel_ids=frozenset(item.get("url", "") for item in (model.get("mp") or [])),
             )
 
     return catalog
@@ -193,6 +196,18 @@ def get_model_info(pid: str | None) -> ModelInfo | None:
     if not pid:
         return None
     return _load_model_catalog().get(pid)
+
+
+def dreamcolor_led_count_bounds(pid: str | None) -> tuple[int, int] | None:
+    """Return the APK-defined LED-count bounds for an unambiguous panel."""
+    model_info = get_model_info(pid)
+    if not model_info or model_info.panel_ids != {_DEFAULT_DREAMCOLOR_PANEL}:
+        return None
+
+    # Panel 2020121211331234's count dialog clamps values below 10 and its
+    # stepper maximum is 300. Other panels use different ranges, so keep those
+    # unavailable until their selected panel can be determined locally.
+    return (10, 300)
 
 
 def _is_outlet_name(name: str | None) -> bool:

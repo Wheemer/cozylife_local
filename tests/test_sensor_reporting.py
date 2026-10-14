@@ -365,6 +365,41 @@ def test_dreamcolor_effect_numbers_match_the_apk_transforms() -> None:
 
     assert sent == [{"8": 250}, {"10": 4}]
 
+def test_default_dreamcolor_led_count_matches_the_apk_bounds_and_payload() -> None:
+    """The default DreamColor panel exposes DPID 12 from 10 through 300."""
+    discovery, _ = _load_modules()
+    number = _load_number_module()
+    sent: list[dict[str, int]] = []
+
+    assert discovery.dreamcolor_led_count_bounds("d8oaf1") == (10, 300)
+    assert discovery.dreamcolor_led_count_bounds("i5ehdz") is None
+
+    class Device:
+        device_model_name = "DreamColor LED strip"
+        device_id = "device"
+        pid = "d8oaf1"
+        ip_address = "192.0.2.1"
+
+        async def async_set_state(self, payload):
+            sent.append(payload)
+            return True
+
+    class Coordinator:
+        def __init__(self):
+            self.device = Device()
+            self.data = {"12": 30}
+
+        def async_set_updated_data(self, data):
+            self.data = data
+
+    entity = number.CozyLifeLightLedCountNumber(Coordinator(), 10, 300)
+    assert entity.native_value == 30
+    assert entity._attr_native_min_value == 10
+    assert entity._attr_native_max_value == 300
+    asyncio.run(entity.async_set_native_value(150))
+
+    assert sent == [{"12": 150}]
+
 
 def test_clear_device_log_button_matches_the_apk_command() -> None:
     """The plug panel clears its log by writing DPID 43 with value one."""

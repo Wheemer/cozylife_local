@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
+    LIGHT_CHIP_POINT,
     LIGHT_COUNTDOWN,
     LIGHT_SENSITIVITY,
     LIGHT_SPEED,
@@ -28,6 +29,7 @@ from .const import (
     SENSOR_TEMPERATURE_LOW_DPID,
 )
 from .coordinator import CozyLifeCoordinator
+from .discovery import dreamcolor_led_count_bounds
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,6 +60,11 @@ async def async_setup_entry(
             for description in LIGHT_CONFIGURATION_NUMBERS
             if description.dpid in dpids
         )
+        led_count_bounds = dreamcolor_led_count_bounds(coordinator.device.pid)
+        if led_count_bounds and LIGHT_CHIP_POINT in dpids:
+            light_numbers.append(
+                CozyLifeLightLedCountNumber(coordinator, *led_count_bounds)
+            )
         if light_numbers:
             async_add_entities(light_numbers)
             return
@@ -293,6 +300,24 @@ class CozyLifeLightConfigurationNumber(
         updated[self._description.dpid] = raw_value
         self.coordinator.async_set_updated_data(updated)
 
+
+class CozyLifeLightLedCountNumber(CozyLifeLightConfigurationNumber):
+    """The default DreamColor panel's configurable LED-count field."""
+
+    def __init__(self, coordinator: CozyLifeCoordinator, minimum: int, maximum: int) -> None:
+        super().__init__(
+            coordinator,
+            LightConfigurationNumberDescription(
+                LIGHT_CHIP_POINT,
+                "led_count",
+                "LED Count",
+                minimum,
+                maximum,
+                1,
+                1,
+                "mdi:led-strip-variant",
+            ),
+        )
 
 class CozyLifeCountdownNumberBase(
     CoordinatorEntity[CozyLifeCoordinator],

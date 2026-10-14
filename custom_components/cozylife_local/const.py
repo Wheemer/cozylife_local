@@ -16,6 +16,7 @@ LIGHT_NORMAL_TIMER = '14'
 LIGHT_POWER_MEMORY = '9'  # 0 = on, 1 = restore previous state
 LIGHT_SPEED = '8'          # raw ÷10 = effect speed percentage
 LIGHT_SENSITIVITY = '10'   # microphone sensitivity, range 1-10
+LIGHT_CHIP_POINT = '12'    # DreamColor LED count
 LIGHT_RGB_TURN = '11'      # LED color channel order
 LIGHT_STATIC_FADE = '20'   # static DreamColor fade toggle
 LIGHT_MUSIC_INDEX = '15'   # DreamColor music effect mode
