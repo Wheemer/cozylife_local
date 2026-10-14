@@ -144,3 +144,16 @@ def test_timeout_starts_sensor_catch_polling_and_retains_data(monkeypatch) -> No
 
     assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215}
     assert instance.update_interval == timedelta(seconds=1)
+
+
+def test_direct_door_and_water_sensors_expose_vendor_battery_dpid() -> None:
+    """DPID 9 is the APK-confirmed battery percentage field for sensors."""
+    discovery, _ = _load_modules()
+
+    door = discovery.classify_device("0iDvw9", "03", ["7", "9", "27", "28", "29"])
+    water = discovery.classify_device("y9DaDw", "03", ["9", "10"])
+
+    assert door.is_direct_local and door.is_sensor_category
+    assert water.is_direct_local and water.is_sensor_category
+    assert not door.is_environment_sensor and not water.is_environment_sensor
+    assert door.has_battery_sensor and water.has_battery_sensor

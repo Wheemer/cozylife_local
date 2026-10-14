@@ -268,6 +268,7 @@ def classify_device(
     dpid_set = {str(dpid) for dpid in (dpids or [])}
     model_info = get_model_info(pid)
     model_name = model_info.model_name if model_info else None
+    is_sensor_category = bool(model_info and model_info.type_name.lower() == "sensor")
 
     # The vendor app identifies 00 as Wi-Fi and 02 as Wi-Fi+BLE.
     is_direct_local = not model_info or (
@@ -289,7 +290,14 @@ def classify_device(
     )
     has_temperature_sensor = is_environment_sensor and SENSOR_TEMPERATURE in dpid_set
     has_humidity_sensor = is_environment_sensor and SENSOR_HUMIDITY in dpid_set
-    has_battery_sensor = is_environment_sensor and SENSOR_BATTERY in dpid_set
+    # The bundled CozyLife sensor panel renders DPID 9 as ``data[9] / 10``
+    # for battery level. Door and water sensors expose that same DPID even
+    # though they do not expose temperature/humidity measurements.
+    has_battery_sensor = (
+        is_direct_local
+        and SENSOR_BATTERY in dpid_set
+        and (is_sensor_category or is_environment_sensor)
+    )
 
     if model_info:
         effective_type_code = model_info.type_code
@@ -299,7 +307,6 @@ def classify_device(
         source = "device"
 
     is_known_motor = bool(model_info and model_info.type_name.lower() == "motor")
-    is_sensor_category = bool(model_info and model_info.type_name.lower() == "sensor")
     is_outlet = bool(model_info and _is_outlet_name(model_info.model_name))
     is_generic_power_device = _is_generic_power_device(model_info)
     has_light_capability = (

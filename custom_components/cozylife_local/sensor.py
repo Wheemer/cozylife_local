@@ -60,8 +60,8 @@ async def async_setup_entry(
             entities.append(CozyLifeTemperatureSensor(coordinator, config_entry))
         if coordinator.classification.has_humidity_sensor:
             entities.append(CozyLifeHumiditySensor(coordinator, config_entry))
-        if coordinator.classification.has_battery_sensor:
-            entities.append(CozyLifeBatterySensor(coordinator, config_entry))
+    if coordinator.classification.has_battery_sensor:
+        entities.append(CozyLifeBatterySensor(coordinator, config_entry))
 
     if coordinator.classification.supports_plug_metering:
         plug_sensor_descriptions = [
