@@ -98,6 +98,7 @@ class ModelInfo:
     model_name: str | None
     dpids: frozenset[str]
     network_type: str | None
+    report_interval_seconds: int | None
 
 
 @dataclass(frozen=True)
@@ -162,9 +163,23 @@ def _load_model_catalog() -> dict[str, ModelInfo]:
                 network_type=(
                     str(model.get("net")) if model.get("net") is not None else None
                 ),
+                report_interval_seconds=_model_report_interval(model),
             )
 
     return catalog
+
+
+def _model_report_interval(model: dict[str, Any]) -> int | None:
+    """Return a vendor catalog reporting interval when one is declared."""
+    config = model.get("p_c_d")
+    if not isinstance(config, dict):
+        return None
+    value = config.get("report_interval")
+    try:
+        interval = int(value)
+    except (TypeError, ValueError):
+        return None
+    return interval if interval > 0 else None
 
 
 async def async_load_model_catalog(hass: HomeAssistant) -> None:
