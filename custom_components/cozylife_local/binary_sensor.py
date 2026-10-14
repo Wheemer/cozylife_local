@@ -103,6 +103,9 @@ def _binary_sensor_descriptions(
             )
         )
 
+    # Panel 2023120210160168 explicitly maps DPID 10 and 11 as
+    # 0 = no alarm and 1 = alarm. Do not treat future/unknown enum values as
+    # alarms merely because they are nonzero.
     if "water" in lower_name and "10" in dpid_set:
         descriptions.append(
             BinarySensorDescription(
@@ -110,6 +113,7 @@ def _binary_sensor_descriptions(
                 key="moisture",
                 name="Moisture",
                 device_class=BinarySensorDeviceClass.MOISTURE,
+                active_values=frozenset({1}),
             )
         )
 
@@ -120,6 +124,7 @@ def _binary_sensor_descriptions(
                 key="smoke",
                 name="Smoke",
                 device_class=BinarySensorDeviceClass.SMOKE,
+                active_values=frozenset({1}),
             )
         )
 

@@ -140,6 +140,21 @@ def _load_binary_sensor_module():
     return importlib.import_module("cozylife_local.binary_sensor")
 
 
+def test_water_and_smoke_alarm_values_match_the_apk() -> None:
+    """The shared sensor panel defines only enum value 1 as an alarm."""
+    binary_sensor = _load_binary_sensor_module()
+
+    water = binary_sensor._binary_sensor_descriptions("Water sensor", ["10"])
+    smoke = binary_sensor._binary_sensor_descriptions("Smoke sensor", ["11"])
+
+    assert [(item.key, item.active_values) for item in water] == [
+        ("moisture", frozenset({1}))
+    ]
+    assert [(item.key, item.active_values) for item in smoke] == [
+        ("smoke", frozenset({1}))
+    ]
+
+
 def test_video_intercom_dpid_101_is_a_call_request() -> None:
     """The bundled intercom panel names DPID 101 device_request_call."""
     binary_sensor = _load_binary_sensor_module()
