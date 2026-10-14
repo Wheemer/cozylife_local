@@ -3,12 +3,7 @@ from dataclasses import dataclass
 
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    PERCENTAGE,
-    EntityCategory,
-    UnitOfTemperature,
-    UnitOfTime,
-)
+from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -20,13 +15,6 @@ from .const import (
     LIGHT_SENSITIVITY,
     LIGHT_SPEED,
     PLUG_COUNTDOWN,
-    SENSOR_HUMIDITY_HIGH_DPID,
-    SENSOR_HUMIDITY_LOW_DPID,
-    SENSOR_HUMIDITY_SENSITIVITY_DPID,
-    SENSOR_REPORT_INTERVAL_DPID,
-    SENSOR_TEMP_SENSITIVITY_DPID,
-    SENSOR_TEMPERATURE_HIGH_DPID,
-    SENSOR_TEMPERATURE_LOW_DPID,
 )
 from .coordinator import CozyLifeCoordinator
 from .discovery import dreamcolor_led_count_bounds
@@ -44,10 +32,7 @@ async def async_setup_entry(
     """Set up CozyLife number platform."""
     coordinator: CozyLifeCoordinator = hass.data[DOMAIN][config_entry.entry_id]
     dpids = set(coordinator.device.dpid or [])
-    if (
-        PLUG_COUNTDOWN in dpids
-        and coordinator.classification.supports_plug_metering
-    ):
+    if PLUG_COUNTDOWN in dpids and coordinator.classification.supports_plug_metering:
         async_add_entities([CozyLifePlugCountdownNumber(coordinator)])
         return
 
@@ -69,146 +54,10 @@ async def async_setup_entry(
             async_add_entities(light_numbers)
             return
 
-    if coordinator.classification.is_environment_sensor:
-        sensor_config_numbers = [
-            CozyLifeSensorConfigurationNumber(coordinator, description)
-            for description in SENSOR_CONFIGURATION_NUMBERS
-            if description.dpid in dpids
-        ]
-        if sensor_config_numbers:
-            async_add_entities(sensor_config_numbers)
-            return
-
     _LOGGER.debug(
         "Device %s has no supported number DPIDs, skipping number setup.",
         coordinator.device.ip_address,
     )
-
-
-@dataclass(frozen=True)
-class SensorConfigurationNumberDescription:
-    """One APK-confirmed temperature/humidity sensor configuration field."""
-
-    dpid: str
-    key: str
-    name: str
-    minimum: float
-    maximum: float
-    step: float
-    scale: int
-    unit: str
-
-
-# The bundled 2023120210160168 CozyLife panel sends all of these together in
-# one type-2 configuration message after a change. DPID 26 is the app display
-# unit preference; it has no Home Assistant control but must be preserved.
-SENSOR_PANEL_CONFIGURATION_DPIDS = (
-    "26",
-    SENSOR_REPORT_INTERVAL_DPID,
-    SENSOR_TEMP_SENSITIVITY_DPID,
-    SENSOR_HUMIDITY_SENSITIVITY_DPID,
-    SENSOR_TEMPERATURE_HIGH_DPID,
-    SENSOR_TEMPERATURE_LOW_DPID,
-    SENSOR_HUMIDITY_HIGH_DPID,
-    SENSOR_HUMIDITY_LOW_DPID,
-)
-
-# The bundled 2023120210160168 CozyLife panel defines these DPIDs and ranges.
-SENSOR_CONFIGURATION_NUMBERS = (
-    SensorConfigurationNumberDescription(
-        SENSOR_REPORT_INTERVAL_DPID, "report_interval", "Reporting Interval",
-        30, 480, 30, 60, UnitOfTime.MINUTES,
-    ),
-    SensorConfigurationNumberDescription(
-        SENSOR_TEMP_SENSITIVITY_DPID, "temperature_sensitivity", "Temperature Sensitivity",
-        0.5, 3.0, 0.1, 10, UnitOfTemperature.CELSIUS,
-    ),
-    SensorConfigurationNumberDescription(
-        SENSOR_HUMIDITY_SENSITIVITY_DPID, "humidity_sensitivity", "Humidity Sensitivity",
-        5, 30, 1, 1, PERCENTAGE,
-    ),
-    SensorConfigurationNumberDescription(
-        SENSOR_TEMPERATURE_HIGH_DPID, "temperature_upper_limit", "Temperature Upper Limit",
-        -10, 110, 0.1, 10, UnitOfTemperature.CELSIUS,
-    ),
-    SensorConfigurationNumberDescription(
-        SENSOR_TEMPERATURE_LOW_DPID, "temperature_lower_limit", "Temperature Lower Limit",
-        -10, 110, 0.1, 10, UnitOfTemperature.CELSIUS,
-    ),
-    SensorConfigurationNumberDescription(
-        SENSOR_HUMIDITY_HIGH_DPID, "humidity_upper_limit", "Humidity Upper Limit",
-        0, 100, 1, 1, PERCENTAGE,
-    ),
-    SensorConfigurationNumberDescription(
-        SENSOR_HUMIDITY_LOW_DPID, "humidity_lower_limit", "Humidity Lower Limit",
-        0, 100, 1, 1, PERCENTAGE,
-    ),
-)
-
-
-class CozyLifeSensorConfigurationNumber(
-    CoordinatorEntity[CozyLifeCoordinator],
-    NumberEntity,
-):
-    """A local control backed by a sensor-panel configuration DPID."""
-
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_mode = NumberMode.BOX
-
-    def __init__(
-        self,
-        coordinator: CozyLifeCoordinator,
-        description: SensorConfigurationNumberDescription,
-    ) -> None:
-        super().__init__(coordinator)
-        self._description = description
-        self._attr_name = f"{coordinator.device.device_model_name} {description.name}"
-        self._attr_unique_id = f"{coordinator.device.device_id}_{description.key}"
-        self._attr_native_min_value = description.minimum
-        self._attr_native_max_value = description.maximum
-        self._attr_native_step = description.step
-        self._attr_native_unit_of_measurement = description.unit
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, self.coordinator.device.device_id)},
-            name=self.coordinator.device.device_model_name,
-            manufacturer="CozyLife",
-            model=self.coordinator.device.pid,
-        )
-
-    @property
-    def native_value(self) -> float | None:
-        raw = self.coordinator.data.get(self._description.dpid)
-        try:
-            return round(int(raw) / self._description.scale, 1)
-        except (TypeError, ValueError):
-            return None
-
-    async def async_set_native_value(self, value: float) -> None:
-        raw_value = round(value * self._description.scale)
-        payload = {
-            dpid: self.coordinator.data[dpid]
-            for dpid in SENSOR_PANEL_CONFIGURATION_DPIDS
-            if dpid in self.coordinator.data
-        }
-        payload[self._description.dpid] = raw_value
-        if not await self.coordinator.device.async_set_state(payload):
-            _LOGGER.warning(
-                "Failed to set %s for sleeping CozyLife sensor %s",
-                self._description.name.lower(),
-                self.coordinator.device.ip_address,
-            )
-            return
-
-        updated = dict(self.coordinator.data)
-        updated[self._description.dpid] = raw_value
-        self.coordinator.async_set_updated_data(updated)
-        if self._description.dpid == SENSOR_REPORT_INTERVAL_DPID:
-            self.coordinator._effective_report_interval = raw_value
-            self.coordinator._schedule_next_sensor_wake()
-
 
 
 @dataclass(frozen=True)
@@ -304,7 +153,9 @@ class CozyLifeLightConfigurationNumber(
 class CozyLifeLightLedCountNumber(CozyLifeLightConfigurationNumber):
     """The default DreamColor panel's configurable LED-count field."""
 
-    def __init__(self, coordinator: CozyLifeCoordinator, minimum: int, maximum: int) -> None:
+    def __init__(
+        self, coordinator: CozyLifeCoordinator, minimum: int, maximum: int
+    ) -> None:
         super().__init__(
             coordinator,
             LightConfigurationNumberDescription(
@@ -318,6 +169,7 @@ class CozyLifeLightLedCountNumber(CozyLifeLightConfigurationNumber):
                 "mdi:led-strip-variant",
             ),
         )
+
 
 class CozyLifeCountdownNumberBase(
     CoordinatorEntity[CozyLifeCoordinator],

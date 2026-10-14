@@ -77,11 +77,3 @@ LIGHT_KELVIN_RANGES = {
 }
 
 SENSOR_REPORT_INTERVAL_DPID = '14'
-
-# APK panel 2023120210160168: values and ranges are verified from its source.
-SENSOR_TEMP_SENSITIVITY_DPID = '25'   # ÷10 = °C, range 0.5-3.0
-SENSOR_HUMIDITY_SENSITIVITY_DPID = '24'  # raw %, range 5-30
-SENSOR_TEMPERATURE_HIGH_DPID = '20'  # ÷10 = °C, range -10.0-110.0
-SENSOR_TEMPERATURE_LOW_DPID = '21'   # ÷10 = °C, range -10.0-110.0
-SENSOR_HUMIDITY_HIGH_DPID = '22'     # raw %, range 0-100
-SENSOR_HUMIDITY_LOW_DPID = '23'      # raw %, range 0-100

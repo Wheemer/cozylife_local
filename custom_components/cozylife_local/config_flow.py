@@ -16,10 +16,8 @@ from .const import (
     LIGHT_KELVIN_RANGES,
     SENSOR_BATTERY,
     SENSOR_HUMIDITY,
-    SENSOR_HUMIDITY_SENSITIVITY_DPID,
     SENSOR_REPORT_INTERVAL_DPID,
     SENSOR_TEMPERATURE,
-    SENSOR_TEMP_SENSITIVITY_DPID,
     SENSOR_TYPE_CODE,
 )
 from .cozylife_api import CozyLifeDevice
@@ -43,18 +41,15 @@ DATA_SCHEMA = vol.Schema({
 
 SLEEPING_SENSOR_PID = "Z4tRml"
 
-# APK model Z4tRml advertises the complete capability set below. Cache it when
-# manually adding a sleeping sensor so every source-backed entity is created
-# before the first wake; runtime values still come only from the device.
+# The manually added sleeping sensor needs its measurements, battery state, and
+# DPID 14 solely to learn its self-reported wake cadence. Vendor alert and
+# configuration DPIDs are deliberately not surfaced as Home Assistant entities.
 SLEEPING_SENSOR_DPIDS = [
-    SENSOR_HUMIDITY, SENSOR_TEMPERATURE, SENSOR_BATTERY,
-    "12", "13", SENSOR_REPORT_INTERVAL_DPID,
-    "20", "21", "22", "23",
-    SENSOR_HUMIDITY_SENSITIVITY_DPID, SENSOR_TEMP_SENSITIVITY_DPID,
-    "26", "30",
+    SENSOR_HUMIDITY,
+    SENSOR_TEMPERATURE,
+    SENSOR_BATTERY,
+    SENSOR_REPORT_INTERVAL_DPID,
 ]
-
-
 def _kelvin_range_for_pid(pid: str | None) -> tuple[int, int]:
     """Return the default Kelvin range for a light model."""
     return LIGHT_KELVIN_RANGES.get(
