@@ -76,6 +76,36 @@ def _load_number_module():
     return importlib.import_module("cozylife_local.number")
 
 
+def _load_select_module():
+    """Load the select platform against the focused Home Assistant stubs."""
+    _load_modules()
+    _module("homeassistant.components")
+    select_component = _module("homeassistant.components.select")
+
+    class SelectEntity:
+        pass
+
+    select_component.SelectEntity = SelectEntity
+    const = _module("homeassistant.const")
+    const.EntityCategory = types.SimpleNamespace(CONFIG="config")
+    core = sys.modules["homeassistant.core"]
+    core.callback = lambda function: function
+    entity = _module("homeassistant.helpers.entity")
+    entity.DeviceInfo = lambda **kwargs: kwargs
+    schedule = _module("cozylife_local.schedule")
+    schedule.ACTION_TURN_OFF = "off"
+    schedule.ACTION_TURN_ON = "on"
+    schedule.DEFAULT_SCHEDULE_ID = "default"
+    schedule.SCHEDULE_MANAGER = "schedule_manager"
+    schedule.WEEKDAYS = {}
+    schedule.CozyLifeScheduleManager = object
+    options = _module("cozylife_local.switch_options")
+    options.supported_dpids = lambda coordinator: set()
+    options.supports_light_schedule_options = lambda coordinator: False
+    options.supports_schedule_options = lambda coordinator: False
+    return importlib.import_module("cozylife_local.select")
+
+
 def _load_switch_module():
     """Load the switch platform against the focused Home Assistant stubs."""
     _load_modules()
@@ -102,6 +132,16 @@ def _load_switch_module():
     options.supports_light_schedule_options = lambda coordinator: False
     options.supports_schedule_options = lambda coordinator: False
     return importlib.import_module("cozylife_local.switch")
+
+
+def test_light_power_memory_options_match_the_apk() -> None:
+    """DreamColor DPID 9 is a two-value power-memory setting."""
+    select = _load_select_module()
+
+    assert select.LIGHT_POWER_MEMORY_OPTIONS == {
+        "On": 0,
+        "Previous state": 1,
+    }
 
 
 def test_metering_panel_boolean_options_match_the_apk() -> None:

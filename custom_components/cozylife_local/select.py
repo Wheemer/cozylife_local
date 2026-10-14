@@ -9,9 +9,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
+    LIGHT_POWER_MEMORY,
     PLUG_LED_STATUS,
     PLUG_POWER_ON_STATE,
-    PLUG_TIMER_SCHEDULE,
 )
 from .coordinator import CozyLifeCoordinator
 from .schedule import (
@@ -42,6 +42,13 @@ LED_STATUS_OPTIONS = {
     "Off": 0,
     "State": 1,
     "Locator": 2,
+}
+LIGHT_POWER_MEMORY_OPTIONS = {
+    "On": 0,
+    "Previous state": 1,
+}
+LIGHT_POWER_MEMORY_VALUES = {
+    value: option for option, value in LIGHT_POWER_MEMORY_OPTIONS.items()
 }
 LED_STATUS_VALUES = {
     value: option for option, value in LED_STATUS_OPTIONS.items()
@@ -92,6 +99,9 @@ async def async_setup_entry(
             )
 
     if coordinator.classification.is_light:
+        dpids = supported_dpids(coordinator)
+        if LIGHT_POWER_MEMORY in dpids:
+            entities.append(CozyLifeLightPowerMemorySelect(coordinator))
         if supports_light_schedule_options(coordinator):
             entities.extend(
                 [
@@ -117,7 +127,7 @@ class CozyLifePowerOnStateSelect(
     """Power-on restore behavior for the metering socket."""
 
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_options = list(POWER_ON_STATE_OPTIONS)
+    _attr_options = tuple(POWER_ON_STATE_OPTIONS)
 
     def __init__(self, coordinator: CozyLifeCoordinator) -> None:
         super().__init__(coordinator)
@@ -165,7 +175,7 @@ class CozyLifePlugScheduleActionSelect(SelectEntity):
     """Default plug schedule action."""
 
     _attr_icon = "mdi:calendar-clock"
-    _attr_options = list(SCHEDULE_ACTION_OPTIONS)
+    _attr_options = tuple(SCHEDULE_ACTION_OPTIONS)
     _entity_domain = "switch"
     _unique_suffix = "schedule_action"
     _name_suffix = "Schedule Action"
@@ -223,7 +233,7 @@ class CozyLifePlugScheduleRepeatSelect(SelectEntity):
     """Default plug schedule repeat preset."""
 
     _attr_icon = "mdi:calendar-repeat"
-    _attr_options = list(SCHEDULE_REPEAT_OPTIONS)
+    _attr_options = tuple(SCHEDULE_REPEAT_OPTIONS)
     _entity_domain = "switch"
     _unique_suffix = "schedule_repeat"
     _name_suffix = "Schedule Repeat"
@@ -300,7 +310,7 @@ class CozyLifeLedStatusSelect(
     """Indicator LED behavior for the metering socket."""
 
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_options = list(LED_STATUS_OPTIONS)
+    _attr_options = tuple(LED_STATUS_OPTIONS)
 
     def __init__(self, coordinator: CozyLifeCoordinator) -> None:
         super().__init__(coordinator)
@@ -341,6 +351,53 @@ class CozyLifeLedStatusSelect(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        self.async_write_ha_state()
+
+
+class CozyLifeLightPowerMemorySelect(
+    CoordinatorEntity[CozyLifeCoordinator],
+    SelectEntity,
+):
+    """Power-memory behavior confirmed by the bundled DreamColor panel."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_options = tuple(LIGHT_POWER_MEMORY_OPTIONS)
+
+    def __init__(self, coordinator: CozyLifeCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = f"{coordinator.device.device_model_name} Power-on State"
+        self._attr_unique_id = f"{coordinator.device.device_id}_light_power_memory"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device.device_id)},
+            name=self.coordinator.device.device_model_name,
+            manufacturer="CozyLife",
+            model=self.coordinator.device.pid,
+        )
+
+    @property
+    def current_option(self) -> str | None:
+        raw = self.coordinator.data.get(LIGHT_POWER_MEMORY)
+        try:
+            return LIGHT_POWER_MEMORY_VALUES.get(int(raw))
+        except (TypeError, ValueError):
+            return None
+
+    async def async_select_option(self, option: str) -> None:
+        value = LIGHT_POWER_MEMORY_OPTIONS[option]
+        if await self.coordinator.device.async_set_state({LIGHT_POWER_MEMORY: value}):
+            self.coordinator.data[LIGHT_POWER_MEMORY] = value
+            self.async_write_ha_state()
+        else:
+            _LOGGER.warning(
+                "Failed to set light power-on state for CozyLife device %s",
+                self.coordinator.device.ip_address,
+            )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()
 
 

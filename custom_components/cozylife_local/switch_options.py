@@ -4,17 +4,14 @@ from __future__ import annotations
 
 from .const import LIGHT_COUNTDOWN, LIGHT_NORMAL_TIMER, PLUG_TIMER_SCHEDULE
 from .coordinator import CozyLifeCoordinator
-from .discovery import get_model_info
 
 
 def supported_dpids(coordinator: CozyLifeCoordinator) -> set[str]:
-    """Return discovered and catalog-listed DPIDs for this device."""
-    dpids = set(coordinator.device.dpid or [])
-    model_info = get_model_info(coordinator.device.pid)
-    if model_info:
-        dpids.update(model_info.dpids)
-    return dpids
+    """Return DPIDs actually advertised by this device.
 
+    Product-catalog data is a locator, not an authority for writable controls.
+    """
+    return {str(dpid) for dpid in (coordinator.device.dpid or [])}
 
 def supports_switch_options(coordinator: CozyLifeCoordinator) -> bool:
     """Return whether the device can expose shared switch option entities."""

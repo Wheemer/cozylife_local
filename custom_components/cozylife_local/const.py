@@ -13,6 +13,7 @@ HUE = '5'
 SAT = '6'
 LIGHT_COUNTDOWN = '13'
 LIGHT_NORMAL_TIMER = '14'
+LIGHT_POWER_MEMORY = '9'  # 0 = on, 1 = restore previous state
 
 # Sensor DPIDs (temperature/humidity sensor, PID=Z4tRml)
 SENSOR_TEMPERATURE = '8'   # raw value ÷ 10 = °C
