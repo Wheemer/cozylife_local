@@ -234,6 +234,25 @@ def test_timeout_starts_sensor_catch_polling_and_retains_data(monkeypatch) -> No
     assert instance.update_interval == timedelta(seconds=1)
 
 
+def test_direct_home_appliances_with_dpid_1_get_one_power_switch() -> None:
+    """Catalogued appliance DPID 1 is the local power control; doorbells are not."""
+    discovery, _ = _load_modules()
+
+    for pid in ("CJjAvl", "IRxsfm", "6jR5If", "e5Riuv"):
+        model = discovery.get_model_info(pid)
+        assert model is not None
+        classified = discovery.classify_device(pid, model.type_code, model.dpids)
+        assert classified.is_direct_local
+        assert classified.supports_switch_entities
+        assert classified.switch_entity_count == 1
+
+    doorbell = discovery.get_model_info("byf5sk")
+    assert doorbell is not None
+    assert not discovery.classify_device(
+        "byf5sk", doorbell.type_code, doorbell.dpids
+    ).supports_switch_entities
+
+
 def test_direct_door_and_water_sensors_expose_vendor_battery_dpid() -> None:
     """DPID 9 is the APK-confirmed battery percentage field for sensors."""
     discovery, _ = _load_modules()

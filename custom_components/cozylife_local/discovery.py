@@ -215,7 +215,10 @@ def _is_generic_power_device(model_info: ModelInfo | None) -> bool:
     if any(marker in lower_name for marker in _GENERIC_POWER_EXCLUDED_NAMES):
         return False
 
-    return _is_switch_name(model_info.model_name) or bool(
+    # Direct home appliances in the bundled catalog (heater, humidifier,
+    # garbage disposal, and kettle) expose DPID 1, the same local power field
+    # used by the CozyLife client. Keep the doorbell exclusion above.
+    return SWITCH in model_info.dpids or _is_switch_name(model_info.model_name) or bool(
         _METERING_DPIDS & model_info.dpids
     )
 
