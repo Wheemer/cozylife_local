@@ -34,7 +34,6 @@ from .const import (
     SENSOR_TEMPERATURE,
 )
 from .coordinator import CozyLifeCoordinator
-from .discovery import get_model_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,10 +50,6 @@ async def async_setup_entry(
 
     entities = [CozyLifeIPAddressSensor(coordinator)]
     dpids = set(coordinator.device.dpid)
-    model_info = get_model_info(coordinator.device.pid)
-    if model_info:
-        dpids.update(model_info.dpids)
-
     if coordinator.classification.is_environment_sensor:
         if coordinator.classification.has_temperature_sensor:
             entities.append(CozyLifeTemperatureSensor(coordinator, config_entry))
