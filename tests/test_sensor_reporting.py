@@ -516,13 +516,35 @@ def test_sensor_reporting_configuration_writes_the_apk_bundle() -> None:
     assert coordinator._effective_report_interval == 1800
 
 
-def test_vendor_catalog_interval_for_felicia_sensor() -> None:
-    discovery, _ = _load_modules()
+def test_sensor_without_reported_interval_does_not_use_catalog_cadence() -> None:
+    """A response without DPID 14 keeps catch polling, regardless of its PID."""
+    _, coordinator_module = _load_modules()
 
-    model = discovery.get_model_info("Z4tRml")
+    class Device:
+        device_id = "device"
+        dpid = ("4", "8", "14")
+        ip_address = "192.0.2.1"
 
-    assert model is not None
-    assert model.report_interval_seconds == 3600
+        async def async_get_state(self):
+            return {"4": 48, "8": 215}
+
+    instance = object.__new__(coordinator_module.CozyLifeCoordinator)
+    instance.device = Device()
+    instance.classification = types.SimpleNamespace(
+        is_environment_sensor=True,
+        supports_switch_entities=False,
+        is_light=False,
+    )
+    instance.data = {}
+    instance._uses_sensor_polling = True
+    instance._current_sensor_response_at = None
+    # A previous implementation populated this from model metadata. A response
+    # that omits DPID 14 must clear it rather than reusing that assumption.
+    instance._effective_report_interval = 3600
+
+    assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215}
+    assert instance._effective_report_interval is None
+    assert instance.update_interval == timedelta(seconds=1)
 
 
 def test_dpid_14_is_vendor_raw_seconds() -> None:
