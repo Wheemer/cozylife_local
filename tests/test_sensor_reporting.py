@@ -496,6 +496,21 @@ def test_video_intercom_dpid_101_is_a_call_request() -> None:
     ]
 
 
+
+def test_door_magnet_contact_and_battery_dpids_match_the_apk() -> None:
+    """Door-magnet panel maps DPID 7 to contact state and DPID 9 to battery."""
+    binary_sensor = _load_binary_sensor_module()
+
+    descriptions = binary_sensor._binary_sensor_descriptions(
+        "Door magnet", ["7", "9"]
+    )
+
+    assert [(item.key, item.dpid, item.device_class) for item in descriptions] == [
+        ("contact", "7", "door")
+    ]
+    assert binary_sensor._coerce_binary_state(1) is True
+    assert binary_sensor._coerce_binary_state(0) is False
+
 def test_sensor_reporting_configuration_writes_the_apk_bundle() -> None:
     """A report-interval change retains all APK panel configuration DPIDs."""
     number = _load_number_module()
