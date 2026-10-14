@@ -60,6 +60,7 @@ def _load_number_module():
 
     class NumberMode:
         BOX = "box"
+        SLIDER = "slider"
 
     number_component.NumberEntity = NumberEntity
     number_component.NumberMode = NumberMode
@@ -172,6 +173,44 @@ def test_writable_options_use_only_device_advertised_dpids() -> None:
     )
 
     assert options.supported_dpids(coordinator) == {"1", "9"}
+
+
+def test_dreamcolor_effect_numbers_match_the_apk_transforms() -> None:
+    """Speed is percent ×10; microphone sensitivity is sent unchanged."""
+    number = _load_number_module()
+    speed, sensitivity = number.LIGHT_CONFIGURATION_NUMBERS
+    sent: list[dict[str, int]] = []
+
+    class Device:
+        device_model_name = "DreamColor"
+        device_id = "device"
+        pid = "pid"
+        ip_address = "192.0.2.1"
+
+        async def async_set_state(self, payload):
+            sent.append(payload)
+            return True
+
+    class Coordinator:
+        def __init__(self):
+            self.device = Device()
+            self.data = {"8": 550, "10": 7}
+
+        def async_set_updated_data(self, data):
+            self.data = data
+
+    coordinator = Coordinator()
+    speed_entity = number.CozyLifeLightConfigurationNumber(coordinator, speed)
+    sensitivity_entity = number.CozyLifeLightConfigurationNumber(
+        coordinator, sensitivity
+    )
+
+    assert speed_entity.native_value == 55
+    assert sensitivity_entity.native_value == 7
+    asyncio.run(speed_entity.async_set_native_value(25))
+    asyncio.run(sensitivity_entity.async_set_native_value(4))
+
+    assert sent == [{"8": 250}, {"10": 4}]
 
 
 def test_clear_device_log_button_matches_the_apk_command() -> None:

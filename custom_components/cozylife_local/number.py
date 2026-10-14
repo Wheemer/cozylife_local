@@ -16,6 +16,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     DOMAIN,
     LIGHT_COUNTDOWN,
+    LIGHT_SENSITIVITY,
+    LIGHT_SPEED,
     PLUG_COUNTDOWN,
     SENSOR_HUMIDITY_HIGH_DPID,
     SENSOR_HUMIDITY_LOW_DPID,
@@ -52,9 +54,18 @@ async def async_setup_entry(
         async_add_entities([CozyLifePlugCountdownNumber(coordinator)])
         return
 
-    if LIGHT_COUNTDOWN in dpids and coordinator.classification.is_light:
-        async_add_entities([CozyLifeLightCountdownNumber(coordinator)])
-        return
+    if coordinator.classification.is_light:
+        light_numbers = []
+        if LIGHT_COUNTDOWN in dpids:
+            light_numbers.append(CozyLifeLightCountdownNumber(coordinator))
+        light_numbers.extend(
+            CozyLifeLightConfigurationNumber(coordinator, description)
+            for description in LIGHT_CONFIGURATION_NUMBERS
+            if description.dpid in dpids
+        )
+        if light_numbers:
+            async_add_entities(light_numbers)
+            return
 
     if coordinator.classification.is_environment_sensor:
         sensor_config_numbers = [
@@ -196,6 +207,96 @@ class CozyLifeSensorConfigurationNumber(
             self.coordinator._effective_report_interval = raw_value
             self.coordinator._schedule_next_sensor_wake()
 
+
+
+@dataclass(frozen=True)
+class LightConfigurationNumberDescription:
+    """One numeric DreamColor light panel setting."""
+
+    dpid: str
+    key: str
+    name: str
+    minimum: float
+    maximum: float
+    step: float
+    scale: int
+    icon: str
+
+
+# DreamColor panel 2022011014060070: DPID 8 stores one tenth of the visible
+# 1-100 percent speed, while DPID 10 is a 1-10 microphone sensitivity value.
+LIGHT_CONFIGURATION_NUMBERS = (
+    LightConfigurationNumberDescription(
+        LIGHT_SPEED, "effect_speed", "Effect Speed", 1, 100, 1, 10, "mdi:speedometer"
+    ),
+    LightConfigurationNumberDescription(
+        LIGHT_SENSITIVITY,
+        "microphone_sensitivity",
+        "Microphone Sensitivity",
+        1,
+        10,
+        1,
+        1,
+        "mdi:microphone",
+    ),
+)
+
+
+class CozyLifeLightConfigurationNumber(
+    CoordinatorEntity[CozyLifeCoordinator],
+    NumberEntity,
+):
+    """A source-backed numeric DreamColor light setting."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_mode = NumberMode.SLIDER
+
+    def __init__(
+        self,
+        coordinator: CozyLifeCoordinator,
+        description: LightConfigurationNumberDescription,
+    ) -> None:
+        super().__init__(coordinator)
+        self._description = description
+        self._attr_name = f"{coordinator.device.device_model_name} {description.name}"
+        self._attr_unique_id = f"{coordinator.device.device_id}_{description.key}"
+        self._attr_icon = description.icon
+        self._attr_native_min_value = description.minimum
+        self._attr_native_max_value = description.maximum
+        self._attr_native_step = description.step
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device.device_id)},
+            name=self.coordinator.device.device_model_name,
+            manufacturer="CozyLife",
+            model=self.coordinator.device.pid,
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        raw = self.coordinator.data.get(self._description.dpid)
+        try:
+            return int(raw) / self._description.scale
+        except (TypeError, ValueError):
+            return None
+
+    async def async_set_native_value(self, value: float) -> None:
+        raw_value = round(value * self._description.scale)
+        if not await self.coordinator.device.async_set_state(
+            {self._description.dpid: raw_value}
+        ):
+            _LOGGER.warning(
+                "Failed to set %s for CozyLife light %s",
+                self._description.name.lower(),
+                self.coordinator.device.ip_address,
+            )
+            return
+
+        updated = dict(self.coordinator.data)
+        updated[self._description.dpid] = raw_value
+        self.coordinator.async_set_updated_data(updated)
 
 
 class CozyLifeCountdownNumberBase(
