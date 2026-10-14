@@ -92,12 +92,11 @@ Once HACS has completed installation and Home Assistant has restarted:
    * **Sleeping Environment Sensor**: If manual provisioning is for a battery-powered sensor, check the "Sleeping temp/humidity sensor" box to avoid handshake timeouts.
    * **Skip Validation**: Check this option to add remote or offline devices immediately (Developer Mode).
 
-### Sleeping Environment Sensor Intervals
+### Sleeping Environment Sensor Timing
 
-Battery-powered environment sensors spend most of their time asleep. The standard report interval is `1800s` / 30 minutes. For compatible firmware, the sleeping-sensor setup and options flow also provides an experimental short-interval mode that allows `600s` / 10-minute updates.
+Battery-powered environment sensors spend most of their time asleep. CozyLife Local does not assume a reporting interval. It catch-polls until the device responds, then reads the sensor panel's advertised `DPID 14` setting as raw seconds and schedules the next wake window from that value.
 
-> [!WARNING]
-> The `600s` interval is experimental. Long-run checks have shown mostly 10-minute wake cycles on compatible firmware, but some cycles can still fall back to about 30 minutes. Use `1800s` when a predictable firmware-supported interval matters more than faster updates.
+If a normal status response omits `DPID 14`, the integration makes a targeted local query for it while the sensor is awake. If the device does not report a valid value, catch-polling continues rather than inventing a cadence.
 
 Home Assistant preserves the last valid temperature and humidity readings when a sleeping sensor returns placeholder values during a short wake window. See the [Sleeping Battery-Powered Sensors](docs/SETUP_GUIDE.md#sleeping-battery-powered-sensors-temphumidity) section for setup details and optional router isolation guidance.
 
@@ -163,7 +162,7 @@ CozyLife devices report their functionalities via standard Data Point IDs (DPIDs
 | `10` | Moisture Status | Water-leak detection and alarm sensor. |
 | `11` | Smoke Detection | Smoke alarm status and alarm sensor. |
 | `13` | Light Countdown | Countdown seconds on compatible lights. |
-| `14` | Report Interval / Light Timer | Sleep interval timer for battery-operated sensors (standard `1800s`; experimental `600s` on compatible firmware); native `normal_timer` payload on compatible lights. |
+| `14` | Report Interval / Light Timer | Device-configured sleep interval in raw seconds when advertised by the sensor; native `normal_timer` payload on compatible lights. |
 | `18` | Power-on State | Relay restore behavior after power loss on compatible plugs and wall switches. |
 | `19` | LED Status | Indicator LED behavior on compatible plugs and wall switches. |
 | `24` | Humidity Sensitivity | Delta threshold to trigger updates on environmental sensor arrays. |
