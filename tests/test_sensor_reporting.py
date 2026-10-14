@@ -61,3 +61,14 @@ def test_dpid_14_is_a_reporting_choice_not_seconds() -> None:
     assert coordinator._decode_sensor_report_interval(15) == 28800
     assert coordinator._decode_sensor_report_interval(600) is None
     assert coordinator._decode_sensor_report_interval(3600) == 3600
+
+
+def test_x7_wifi_speakers_are_classified_for_local_media_support() -> None:
+    discovery, _ = _load_modules()
+
+    classification = discovery.classify_device(
+        "GriFPh", "23", [str(dpid) for dpid in range(1, 26)]
+    )
+
+    assert classification.is_direct_local
+    assert classification.is_smart_speaker
