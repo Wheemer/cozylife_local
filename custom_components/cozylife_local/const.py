@@ -19,6 +19,7 @@ LIGHT_SENSITIVITY = '10'   # microphone sensitivity, range 1-10
 LIGHT_RGB_TURN = '11'      # LED color channel order
 LIGHT_STATIC_FADE = '20'   # static DreamColor fade toggle
 LIGHT_MUSIC_INDEX = '15'   # DreamColor music effect mode
+LIGHT_STATIC_COLOR = '16'  # DreamColor whole-strip static hue/saturation payload
 LIGHT_BOOT_STATUS = '44'   # DreamColor power-on behavior
 
 # Sensor DPIDs (temperature/humidity sensor, PID=Z4tRml)

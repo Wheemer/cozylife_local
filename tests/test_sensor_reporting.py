@@ -79,6 +79,37 @@ def _load_number_module():
     return importlib.import_module("cozylife_local.number")
 
 
+def _load_light_module():
+    """Load the light platform against focused Home Assistant stubs."""
+    _load_modules()
+    _module("homeassistant.components")
+    light_component = _module("homeassistant.components.light")
+
+    class LightEntity:
+        pass
+
+    class ColorMode:
+        ONOFF = "onoff"
+        HS = "hs"
+        COLOR_TEMP = "color_temp"
+        BRIGHTNESS = "brightness"
+
+    light_component.ATTR_BRIGHTNESS = "brightness"
+    light_component.ATTR_COLOR_TEMP_KELVIN = "color_temp_kelvin"
+    light_component.ATTR_HS_COLOR = "hs_color"
+    light_component.ColorMode = ColorMode
+    light_component.LightEntity = LightEntity
+    core = sys.modules["homeassistant.core"]
+    core.callback = lambda function: function
+    entity = _module("homeassistant.helpers.entity")
+    entity.DeviceInfo = lambda **kwargs: kwargs
+    color = _module("homeassistant.util.color")
+    color.color_hs_to_RGB = lambda hue, saturation: (hue, saturation, 0)
+    color.color_RGB_to_hs = lambda red, green, _blue: (red, green)
+    sys.modules.pop("cozylife_local.light", None)
+    return importlib.import_module("cozylife_local.light")
+
+
 def _load_select_module():
     """Load the select platform against the focused Home Assistant stubs."""
     _load_modules()
@@ -154,6 +185,34 @@ def _load_switch_module():
     options.supports_light_schedule_options = lambda coordinator: False
     options.supports_schedule_options = lambda coordinator: False
     return importlib.import_module("cozylife_local.switch")
+
+
+def test_dreamcolor_static_color_matches_the_apk_payload() -> None:
+    """DPID 16 is the panel's whole-strip static hue/saturation command."""
+    light = _load_light_module()
+    sent: list[dict[str, int | str]] = []
+
+    class Device:
+        device_model_name = "DreamColor"
+        device_id = "device"
+        pid = "pid"
+        ip_address = "192.0.2.1"
+        dpid = ("1", "2", "16")
+
+        async def async_set_state(self, payload):
+            sent.append(payload)
+            return True
+
+    coordinator = types.SimpleNamespace(
+        device=Device(), data={"1": 1, "2": 0, "16": "0078029effff"}
+    )
+    entry = types.SimpleNamespace(data={}, options={})
+    entity = light.CozyLifeLight(coordinator, entry)
+
+    assert entity.hs_color == (120.0, 67.0)
+    asyncio.run(entity.async_turn_on(hs_color=(120, 67)))
+
+    assert sent == [{"1": 1, "2": 0, "16": "0078029effff"}]
 
 
 def test_light_power_memory_options_match_the_apk() -> None:

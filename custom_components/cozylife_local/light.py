@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
@@ -17,18 +17,18 @@ from homeassistant.util.color import (
     color_RGB_to_hs,
 )
 
-
 from .const import (
-    DOMAIN,
     BRIGHT,
-    TEMP,
+    DEFAULT_MAX_KELVIN,
+    DEFAULT_MIN_KELVIN,
+    DOMAIN,
     HUE,
+    LIGHT_KELVIN_RANGES,
+    LIGHT_STATIC_COLOR,
     SAT,
     SWITCH,
+    TEMP,
     WORK_MODE,
-    DEFAULT_MIN_KELVIN,
-    DEFAULT_MAX_KELVIN,
-    LIGHT_KELVIN_RANGES,
 )
 from .coordinator import CozyLifeCoordinator
 
@@ -41,6 +41,26 @@ def _kelvin_range_for_pid(pid: str | None) -> tuple[int, int]:
         pid or "",
         (DEFAULT_MIN_KELVIN, DEFAULT_MAX_KELVIN),
     )
+
+def _dream_static_color_to_hs(value: Any) -> tuple[float, float] | None:
+    """Decode the static DreamColor payload used by the bundled panel."""
+    if not isinstance(value, str) or len(value) < 8:
+        return None
+    try:
+        hue = int(value[:4], 16)
+        saturation = int(value[4:8], 16)
+    except ValueError:
+        return None
+    if hue > 360 or saturation > 1000:
+        return None
+    return float(hue), saturation / 10
+
+
+def _encode_dream_static_color(hs_color: tuple[float, float]) -> str:
+    """Encode a whole-strip DreamColor command exactly as the panel does."""
+    hue = round(max(0, min(360, hs_color[0])))
+    saturation = round(max(0, min(100, hs_color[1])) * 10)
+    return f"{hue:04x}{saturation:04x}ffff"
 
 
 async def async_setup_entry(
@@ -101,7 +121,9 @@ class CozyLifeLight(CoordinatorEntity[CozyLifeCoordinator], LightEntity):
             self._supported_color_modes.add(ColorMode.ONOFF)
             return
 
-        if HUE in coordinator.device.dpid and SAT in coordinator.device.dpid:
+        if LIGHT_STATIC_COLOR in coordinator.device.dpid or (
+            HUE in coordinator.device.dpid and SAT in coordinator.device.dpid
+        ):
             self._supported_color_modes.add(ColorMode.HS)
         if TEMP in coordinator.device.dpid:
             self._supported_color_modes.add(ColorMode.COLOR_TEMP)
@@ -121,13 +143,13 @@ class CozyLifeLight(CoordinatorEntity[CozyLifeCoordinator], LightEntity):
         )
 
     @property
-    def is_on(self) -> Optional[bool]:
+    def is_on(self) -> bool | None:
         """Return true if light is on."""
         # Original integration checks if value > 0, since we send 255 when turning on
         return self.coordinator.data.get(SWITCH, 0) > 0
 
     @property
-    def brightness(self) -> Optional[int]:
+    def brightness(self) -> int | None:
         """Return the brightness of this light between 0..255."""
         if BRIGHT not in self.coordinator.data:
             return None
@@ -136,10 +158,15 @@ class CozyLifeLight(CoordinatorEntity[CozyLifeCoordinator], LightEntity):
         return int((device_brightness / 1000) * 255)
 
     @property
-    def color_mode(self) -> Optional[ColorMode]:
+    def color_mode(self) -> ColorMode | None:
         """Return the color mode of the light."""
         # The original integration determines color mode based on which values are valid (< 60000)
         # not just based on work_mode. This is critical for proper UI updates.
+
+        if _dream_static_color_to_hs(
+            self.coordinator.data.get(LIGHT_STATIC_COLOR)
+        ) is not None:
+            return ColorMode.HS
 
         # Check if we have valid color values (< 60000)
         if (HUE in self.coordinator.data and SAT in self.coordinator.data and
@@ -164,13 +191,18 @@ class CozyLifeLight(CoordinatorEntity[CozyLifeCoordinator], LightEntity):
         return ColorMode.ONOFF
 
     @property
-    def supported_color_modes(self) -> Optional[set[ColorMode]]:
+    def supported_color_modes(self) -> set[ColorMode] | None:
         """Flag of supported color modes by the light."""
         return self._supported_color_modes
 
     @property
-    def hs_color(self) -> Optional[tuple[float, float]]:
+    def hs_color(self) -> tuple[float, float] | None:
         """Return the hs color value."""
+        dream_hs = _dream_static_color_to_hs(
+            self.coordinator.data.get(LIGHT_STATIC_COLOR)
+        )
+        if dream_hs is not None:
+            return dream_hs
         if HUE not in self.coordinator.data or SAT not in self.coordinator.data:
             _LOGGER.debug(f"[COZYLIFE] hs_color: HUE or SAT not in coordinator.data. Data keys: {self.coordinator.data.keys()}")
             return None
@@ -193,7 +225,7 @@ class CozyLifeLight(CoordinatorEntity[CozyLifeCoordinator], LightEntity):
         return hs_color
 
     @property
-    def color_temp_kelvin(self) -> Optional[int]:
+    def color_temp_kelvin(self) -> int | None:
         """Return the color temperature in Kelvin."""
         if TEMP not in self.coordinator.data:
             return None
@@ -221,7 +253,7 @@ class CozyLifeLight(CoordinatorEntity[CozyLifeCoordinator], LightEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the light on."""
         # Match original integration where work mode is supported.
-        payload: Dict[str, Any] = {SWITCH: 1}
+        payload: dict[str, Any] = {SWITCH: 1}
 
         if WORK_MODE in self.coordinator.device.dpid:
             payload[WORK_MODE] = 0
@@ -231,14 +263,16 @@ class CozyLifeLight(CoordinatorEntity[CozyLifeCoordinator], LightEntity):
             # Convert HA's 0-255 to device's 0-1000 (use round like original)
             payload[BRIGHT] = round(ha_brightness / 255 * 1000)
 
-        if ATTR_HS_COLOR in kwargs and HUE in self.coordinator.device.dpid and SAT in self.coordinator.device.dpid:
+        if ATTR_HS_COLOR in kwargs:
             hs_color = kwargs[ATTR_HS_COLOR]
-            # Do RGB round-trip conversion for color correction (from original integration)
-            r, g, b = color_hs_to_RGB(*hs_color)
-            hs_color = color_RGB_to_hs(r, g, b)
-            # Convert HA's Hue 0-360, Sat 0-100 to device's Hue 0-360, Sat 0-1000
-            payload[HUE] = round(hs_color[0])
-            payload[SAT] = round(hs_color[1] * 10)
+            if LIGHT_STATIC_COLOR in self.coordinator.device.dpid:
+                payload[LIGHT_STATIC_COLOR] = _encode_dream_static_color(hs_color)
+            elif HUE in self.coordinator.device.dpid and SAT in self.coordinator.device.dpid:
+                # Do RGB round-trip conversion for color correction.
+                r, g, b = color_hs_to_RGB(*hs_color)
+                hs_color = color_RGB_to_hs(r, g, b)
+                payload[HUE] = round(hs_color[0])
+                payload[SAT] = round(hs_color[1] * 10)
 
         if ATTR_COLOR_TEMP_KELVIN in kwargs and TEMP in self.coordinator.device.dpid:
             ha_kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
