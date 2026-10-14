@@ -9,7 +9,6 @@ import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-
 COMPONENT_DIR = Path(__file__).parents[1] / "custom_components" / "cozylife_local"
 
 
@@ -142,6 +141,18 @@ def test_light_power_memory_options_match_the_apk() -> None:
         "On": 0,
         "Previous state": 1,
     }
+
+
+def test_writable_options_use_only_device_advertised_dpids() -> None:
+    """Catalog metadata must not create a writable control."""
+    _load_modules()
+    sys.modules.pop("cozylife_local.switch_options", None)
+    options = importlib.import_module("cozylife_local.switch_options")
+    coordinator = types.SimpleNamespace(
+        device=types.SimpleNamespace(dpid=["1", "9"])
+    )
+
+    assert options.supported_dpids(coordinator) == {"1", "9"}
 
 
 def test_metering_panel_boolean_options_match_the_apk() -> None:
@@ -334,7 +345,7 @@ def test_timeout_starts_sensor_catch_polling_and_retains_data(monkeypatch) -> No
     class Device:
         ip_address = "192.0.2.1"
         device_id = "device"
-        dpid = ["4", "8", "9", "14"]
+        dpid = ("4", "8", "9", "14")
 
         async def async_get_state(self):
             return None
