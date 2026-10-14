@@ -22,7 +22,7 @@ class BinarySensorDescription:
     dpid: str
     key: str
     name: str
-    device_class: BinarySensorDeviceClass
+    device_class: BinarySensorDeviceClass | None
     active_values: frozenset[int] | None = None
 
 
@@ -120,6 +120,19 @@ def _binary_sensor_descriptions(
                 key="smoke",
                 name="Smoke",
                 device_class=BinarySensorDeviceClass.SMOKE,
+            )
+        )
+
+    # The bundled video-intercom panel calls DPID 101 `device_request_call`.
+    # It is an event state, not a camera stream, so leave its device class
+    # neutral rather than misrepresenting it as occupancy or a door contact.
+    if ("doorbell" in lower_name or "video intercom" in lower_name) and "101" in dpid_set:
+        descriptions.append(
+            BinarySensorDescription(
+                dpid="101",
+                key="call_request",
+                name="Call Request",
+                device_class=None,
             )
         )
 

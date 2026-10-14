@@ -76,6 +76,43 @@ def _load_number_module():
     return importlib.import_module("cozylife_local.number")
 
 
+def _load_binary_sensor_module():
+    """Load the binary sensor platform against the focused HA stubs."""
+    _load_modules()
+    _module("homeassistant.components")
+    binary_component = _module("homeassistant.components.binary_sensor")
+
+    class BinarySensorEntity:
+        pass
+
+    binary_component.BinarySensorEntity = BinarySensorEntity
+    binary_component.BinarySensorDeviceClass = types.SimpleNamespace(
+        DOOR="door",
+        MOTION="motion",
+        MOISTURE="moisture",
+        SMOKE="smoke",
+        OCCUPANCY="occupancy",
+        PROBLEM="problem",
+    )
+    core = sys.modules["homeassistant.core"]
+    core.callback = lambda function: function
+    entity = _module("homeassistant.helpers.entity")
+    entity.DeviceInfo = lambda **kwargs: kwargs
+    return importlib.import_module("cozylife_local.binary_sensor")
+
+
+def test_video_intercom_dpid_101_is_a_call_request() -> None:
+    """The bundled intercom panel names DPID 101 device_request_call."""
+    binary_sensor = _load_binary_sensor_module()
+
+    descriptions = binary_sensor._binary_sensor_descriptions(
+        "Video intercom", ["101"]
+    )
+    assert [(item.key, item.dpid, item.device_class) for item in descriptions] == [
+        ("call_request", "101", None)
+    ]
+
+
 def test_sensor_reporting_configuration_writes_the_apk_bundle() -> None:
     """A report-interval change retains all APK panel configuration DPIDs."""
     number = _load_number_module()
