@@ -166,6 +166,29 @@ def test_light_power_memory_options_match_the_apk() -> None:
     }
 
 
+
+def test_dreamcolor_boot_status_matches_the_apk_payload() -> None:
+    """DPID 44 exposes the panel's three power-on behaviors."""
+    select = _load_select_module()
+    sent: list[dict[str, int]] = []
+
+    class Device:
+        device_model_name = "DreamColor"
+        device_id = "device"
+        pid = "pid"
+        ip_address = "192.0.2.1"
+
+        async def async_set_state(self, payload):
+            sent.append(payload)
+            return True
+
+    coordinator = types.SimpleNamespace(device=Device(), data={"44": 1})
+    entity = select.CozyLifeLightBootStatusSelect(coordinator)
+
+    assert entity.current_option == "Previous state"
+    asyncio.run(entity.async_select_option("Off"))
+
+    assert sent == [{"44": 2}]
 def test_dreamcolor_music_effect_matches_the_apk_payload() -> None:
     """The app enters music mode four and writes the selected index."""
     select = _load_select_module()

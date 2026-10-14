@@ -9,6 +9,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
+    LIGHT_BOOT_STATUS,
     LIGHT_MUSIC_INDEX,
     LIGHT_POWER_MEMORY,
     LIGHT_RGB_TURN,
@@ -73,6 +74,14 @@ LIGHT_MUSIC_OPTIONS = {
 LIGHT_MUSIC_VALUES = {
     value: option for option, value in LIGHT_MUSIC_OPTIONS.items()
 }
+LIGHT_BOOT_STATUS_OPTIONS = {
+    "On": 0,
+    "Previous state": 1,
+    "Off": 2,
+}
+LIGHT_BOOT_STATUS_VALUES = {
+    value: option for option, value in LIGHT_BOOT_STATUS_OPTIONS.items()
+}
 LED_STATUS_VALUES = {
     value: option for option, value in LED_STATUS_OPTIONS.items()
 }
@@ -129,6 +138,8 @@ async def async_setup_entry(
             entities.append(CozyLifeLightRgbTurnSelect(coordinator))
         if {WORK_MODE, LIGHT_MUSIC_INDEX} <= dpids:
             entities.append(CozyLifeLightMusicSelect(coordinator))
+        if LIGHT_BOOT_STATUS in dpids:
+            entities.append(CozyLifeLightBootStatusSelect(coordinator))
         if supports_light_schedule_options(coordinator):
             entities.extend(
                 [
@@ -517,6 +528,54 @@ class CozyLifeLightMusicSelect(
         else:
             _LOGGER.warning(
                 "Failed to set music effect for CozyLife device %s",
+                self.coordinator.device.ip_address,
+            )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
+
+
+class CozyLifeLightBootStatusSelect(
+    CoordinatorEntity[CozyLifeCoordinator],
+    SelectEntity,
+):
+    """DreamColor power-on behavior defined by the bundled panel."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_options = tuple(LIGHT_BOOT_STATUS_OPTIONS)
+    _attr_icon = "mdi:power-settings"
+
+    def __init__(self, coordinator: CozyLifeCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = f"{coordinator.device.device_model_name} Power-on State"
+        self._attr_unique_id = f"{coordinator.device.device_id}_light_boot_status"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device.device_id)},
+            name=self.coordinator.device.device_model_name,
+            manufacturer="CozyLife",
+            model=self.coordinator.device.pid,
+        )
+
+    @property
+    def current_option(self) -> str | None:
+        raw = self.coordinator.data.get(LIGHT_BOOT_STATUS)
+        try:
+            return LIGHT_BOOT_STATUS_VALUES.get(int(raw))
+        except (TypeError, ValueError):
+            return None
+
+    async def async_select_option(self, option: str) -> None:
+        value = LIGHT_BOOT_STATUS_OPTIONS[option]
+        if await self.coordinator.device.async_set_state({LIGHT_BOOT_STATUS: value}):
+            self.coordinator.data[LIGHT_BOOT_STATUS] = value
+            self.async_write_ha_state()
+        else:
+            _LOGGER.warning(
+                "Failed to set power-on state for CozyLife device %s",
                 self.coordinator.device.ip_address,
             )
 
