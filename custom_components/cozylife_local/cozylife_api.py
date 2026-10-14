@@ -149,7 +149,10 @@ class CozyLifeDevice:
             _LOGGER.warning(f"Outer loop timeout for sn {sent_sn}, no matching response received.")
             return None
 
-        except (ConnectionRefusedError, OSError) as e:
+        except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+            # A sleeping device often drops or ignores a connection outside its
+            # wake window. Treat connect timeouts like every other no-response
+            # path so the coordinator can enter catch polling.
             self._disconnect()
             return None
         finally:

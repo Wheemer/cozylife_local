@@ -90,3 +90,18 @@ def test_placeholder_sensor_response_is_resampled_without_legacy_option(
     monkeypatch.setattr(coordinator_module.asyncio, "sleep", no_wait)
 
     assert asyncio.run(instance._async_get_environment_state()) == {"4": 48, "8": 215}
+
+
+def test_connect_timeout_is_a_normal_no_response() -> None:
+    """A sleeping-device connection timeout must not escape the API client."""
+    _load_modules()
+    api = importlib.import_module("cozylife_local.cozylife_api")
+
+    async def timeout_connect() -> None:
+        raise asyncio.TimeoutError
+
+    instance = object.__new__(api.CozyLifeDevice)
+    instance._connect = timeout_connect
+    instance._disconnect = lambda: None
+
+    assert asyncio.run(instance._send_receive(2, {"attr": [1]})) is None
