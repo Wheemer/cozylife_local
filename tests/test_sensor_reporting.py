@@ -163,6 +163,20 @@ def test_light_power_memory_options_match_the_apk() -> None:
     }
 
 
+def test_dreamcolor_rgb_order_options_match_the_apk() -> None:
+    """The panel maps the six LED color orders directly to zero through five."""
+    select = _load_select_module()
+
+    assert select.LIGHT_RGB_TURN_OPTIONS == {
+        "GR": 0,
+        "RG": 1,
+        "GB": 2,
+        "RB": 3,
+        "BR": 4,
+        "BG": 5,
+    }
+
+
 def test_writable_options_use_only_device_advertised_dpids() -> None:
     """Catalog metadata must not create a writable control."""
     _load_modules()
