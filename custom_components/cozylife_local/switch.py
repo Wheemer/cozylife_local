@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
@@ -8,7 +9,12 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, PLUG_OVERCURRENT_PROTECTION, PLUG_TIMER_SCHEDULE
+from .const import (
+    DOMAIN,
+    PLUG_BACKLIGHT_STATUS,
+    PLUG_CHILD_LOCK,
+    PLUG_OVERCURRENT_PROTECTION,
+)
 from .coordinator import CozyLifeCoordinator
 from .schedule import (
     DEFAULT_SCHEDULE_ID,
@@ -75,8 +81,11 @@ async def async_setup_entry(
 
     dpids = supported_dpids(coordinator)
     if coordinator.classification.supports_plug_metering:
-        if PLUG_OVERCURRENT_PROTECTION in dpids:
-            entities.append(CozyLifePlugBooleanSwitch(coordinator))
+        entities.extend(
+            CozyLifePlugBooleanSwitch(coordinator, description)
+            for description in PLUG_BOOLEAN_SWITCHES
+            if description.dpid in dpids
+        )
     if supports_schedule_options(coordinator):
         entities.append(CozyLifePlugScheduleEnabledSwitch(coordinator))
     if supports_light_schedule_options(coordinator):
@@ -257,6 +266,26 @@ class CozyLifeLightScheduleEnabledSwitch(CozyLifePlugScheduleEnabledSwitch):
     _unique_suffix = "light_schedule_enabled"
 
 
+@dataclass(frozen=True)
+class PlugBooleanSwitchDescription:
+    """One APK-confirmed boolean option on a metering switch/plug."""
+
+    dpid: str
+    key: str
+    name: str
+
+
+# Panel 2021072815080038 labels these as power protection, backlight, and
+# child lock. They are deliberately only exposed for metering electrical models.
+PLUG_BOOLEAN_SWITCHES = (
+    PlugBooleanSwitchDescription(
+        PLUG_OVERCURRENT_PROTECTION, "overcurrent_protection", "Overcurrent Protection"
+    ),
+    PlugBooleanSwitchDescription(PLUG_BACKLIGHT_STATUS, "backlight", "Backlight"),
+    PlugBooleanSwitchDescription(PLUG_CHILD_LOCK, "child_lock", "Child Lock"),
+)
+
+
 class CozyLifePlugBooleanSwitch(
     CoordinatorEntity[CozyLifeCoordinator],
     SwitchEntity,
@@ -265,12 +294,15 @@ class CozyLifePlugBooleanSwitch(
 
     _attr_entity_category = EntityCategory.CONFIG
 
-    def __init__(self, coordinator: CozyLifeCoordinator) -> None:
+    def __init__(
+        self,
+        coordinator: CozyLifeCoordinator,
+        description: PlugBooleanSwitchDescription,
+    ) -> None:
         super().__init__(coordinator)
-        self._attr_name = f"{coordinator.device.device_model_name} Overcurrent Protection"
-        self._attr_unique_id = (
-            f"{coordinator.device.device_id}_overcurrent_protection"
-        )
+        self._description = description
+        self._attr_name = f"{coordinator.device.device_model_name} {description.name}"
+        self._attr_unique_id = f"{coordinator.device.device_id}_{description.key}"
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -284,8 +316,8 @@ class CozyLifePlugBooleanSwitch(
 
     @property
     def is_on(self) -> bool | None:
-        """Return whether overcurrent protection is enabled."""
-        raw = self.coordinator.data.get(PLUG_OVERCURRENT_PROTECTION)
+        """Return whether this device option is enabled."""
+        raw = self.coordinator.data.get(self._description.dpid)
         if raw is None:
             return None
         return bool(raw)
@@ -293,13 +325,14 @@ class CozyLifePlugBooleanSwitch(
     async def _async_set_state(self, enabled: bool) -> None:
         value = 1 if enabled else 0
         if await self.coordinator.device.async_set_state(
-            {PLUG_OVERCURRENT_PROTECTION: value}
+            {self._description.dpid: value}
         ):
-            self.coordinator.data[PLUG_OVERCURRENT_PROTECTION] = value
+            self.coordinator.data[self._description.dpid] = value
             self.async_write_ha_state()
         else:
             _LOGGER.warning(
-                "Failed to set overcurrent protection for CozyLife device %s",
+                "Failed to set %s for CozyLife device %s",
+                self._description.name.lower(),
                 self.coordinator.device.ip_address,
             )
 

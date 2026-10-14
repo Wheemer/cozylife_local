@@ -76,6 +76,45 @@ def _load_number_module():
     return importlib.import_module("cozylife_local.number")
 
 
+def _load_switch_module():
+    """Load the switch platform against the focused Home Assistant stubs."""
+    _load_modules()
+    _module("homeassistant.components")
+    switch_component = _module("homeassistant.components.switch")
+
+    class SwitchEntity:
+        pass
+
+    switch_component.SwitchEntity = SwitchEntity
+    switch_component.SwitchDeviceClass = types.SimpleNamespace(OUTLET="outlet")
+    const = _module("homeassistant.const")
+    const.EntityCategory = types.SimpleNamespace(CONFIG="config")
+    core = sys.modules["homeassistant.core"]
+    core.callback = lambda function: function
+    entity = _module("homeassistant.helpers.entity")
+    entity.DeviceInfo = lambda **kwargs: kwargs
+    schedule = _module("cozylife_local.schedule")
+    schedule.DEFAULT_SCHEDULE_ID = "default"
+    schedule.SCHEDULE_MANAGER = "schedule_manager"
+    schedule.CozyLifeScheduleManager = object
+    options = _module("cozylife_local.switch_options")
+    options.supported_dpids = lambda coordinator: set()
+    options.supports_light_schedule_options = lambda coordinator: False
+    options.supports_schedule_options = lambda coordinator: False
+    return importlib.import_module("cozylife_local.switch")
+
+
+def test_metering_panel_boolean_options_match_the_apk() -> None:
+    """The electrical panel names DPID 20, 21, and 32 as boolean controls."""
+    switch = _load_switch_module()
+
+    assert [(item.dpid, item.key) for item in switch.PLUG_BOOLEAN_SWITCHES] == [
+        ("32", "overcurrent_protection"),
+        ("20", "backlight"),
+        ("21", "child_lock"),
+    ]
+
+
 def _load_binary_sensor_module():
     """Load the binary sensor platform against the focused HA stubs."""
     _load_modules()
