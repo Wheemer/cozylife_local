@@ -32,11 +32,15 @@ def _load_modules():
     update_coordinator = _module("homeassistant.helpers.update_coordinator")
 
     class Coordinator:
+        def __init__(self, coordinator=None) -> None:
+            self.coordinator = coordinator
+
         @classmethod
         def __class_getitem__(cls, _item):
             return cls
 
     update_coordinator.DataUpdateCoordinator = Coordinator
+    update_coordinator.CoordinatorEntity = Coordinator
     update_coordinator.UpdateFailed = RuntimeError
     package = types.ModuleType("cozylife_local")
     package.__path__ = [str(COMPONENT_DIR)]
@@ -44,6 +48,87 @@ def _load_modules():
     discovery = importlib.import_module("cozylife_local.discovery")
     coordinator = importlib.import_module("cozylife_local.coordinator")
     return discovery, coordinator
+
+
+def _load_number_module():
+    """Load the number platform against the focused Home Assistant stubs."""
+    _load_modules()
+    _module("homeassistant.components")
+    number_component = _module("homeassistant.components.number")
+
+    class NumberEntity:
+        pass
+
+    class NumberMode:
+        BOX = "box"
+
+    number_component.NumberEntity = NumberEntity
+    number_component.NumberMode = NumberMode
+    const = _module("homeassistant.const")
+    const.EntityCategory = types.SimpleNamespace(CONFIG="config")
+    const.PERCENTAGE = "%"
+    const.UnitOfTemperature = types.SimpleNamespace(CELSIUS="C")
+    const.UnitOfTime = types.SimpleNamespace(MINUTES="min", SECONDS="s")
+    core = sys.modules["homeassistant.core"]
+    core.callback = lambda function: function
+    entity = _module("homeassistant.helpers.entity")
+    entity.DeviceInfo = lambda **kwargs: kwargs
+    return importlib.import_module("cozylife_local.number")
+
+
+def test_sensor_reporting_configuration_writes_the_apk_bundle() -> None:
+    """A report-interval change retains all APK panel configuration DPIDs."""
+    number = _load_number_module()
+
+    class Device:
+        device_id = "device"
+        device_model_name = "Temperature Sensor"
+        pid = "Z4tRml"
+        ip_address = "192.0.2.1"
+        payload = None
+
+        async def async_set_state(self, payload):
+            self.payload = payload
+            return True
+
+    device = Device()
+    coordinator = types.SimpleNamespace(
+        device=device,
+        data={
+            "26": 1,
+            "14": 3600,
+            "25": 25,
+            "24": 10,
+            "20": 300,
+            "21": 200,
+            "22": 100,
+            "23": 10,
+        },
+        async_set_updated_data=lambda data: setattr(coordinator, "data", data),
+        _effective_report_interval=None,
+        _schedule_next_sensor_wake=lambda: None,
+    )
+    description = next(
+        item
+        for item in number.SENSOR_CONFIGURATION_NUMBERS
+        if item.dpid == "14"
+    )
+    entity = number.CozyLifeSensorConfigurationNumber(coordinator, description)
+
+    assert entity.native_value == 60
+    asyncio.run(entity.async_set_native_value(30))
+    assert device.payload == {
+        "26": 1,
+        "14": 1800,
+        "25": 25,
+        "24": 10,
+        "20": 300,
+        "21": 200,
+        "22": 100,
+        "23": 10,
+    }
+    assert coordinator.data["14"] == 1800
+    assert coordinator._effective_report_interval == 1800
 
 
 def test_vendor_catalog_interval_for_felicia_sensor() -> None:
