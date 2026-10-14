@@ -23,16 +23,43 @@ class BinarySensorDescription:
     key: str
     name: str
     device_class: BinarySensorDeviceClass
+    active_values: frozenset[int] | None = None
 
 
 def _binary_sensor_descriptions(
     model_name: str | None,
     dpids: list[str],
+    *,
+    is_environment_sensor: bool = False,
 ) -> list[BinarySensorDescription]:
     """Return conservative binary sensor mappings for known CozyLife sensors."""
     lower_name = (model_name or "").lower()
     dpid_set = set(dpids)
     descriptions: list[BinarySensorDescription] = []
+
+    # The bundled temperature/humidity panel maps DPID 12 and 13 as
+    # no/lower/upper/cleared alarm states. Only lower and upper are active.
+    if is_environment_sensor:
+        if "13" in dpid_set:
+            descriptions.append(
+                BinarySensorDescription(
+                    dpid="13",
+                    key="temperature_alarm",
+                    name="Temperature Alarm",
+                    device_class=BinarySensorDeviceClass.PROBLEM,
+                    active_values=frozenset({1, 2}),
+                )
+            )
+        if "12" in dpid_set:
+            descriptions.append(
+                BinarySensorDescription(
+                    dpid="12",
+                    key="humidity_alarm",
+                    name="Humidity Alarm",
+                    device_class=BinarySensorDeviceClass.PROBLEM,
+                    active_values=frozenset({1, 2}),
+                )
+            )
 
     # t8nvdb is the catalog Wi-Fi multi-sensor. Existing entity semantics use
     # DPID 6 for motion and DPID 7 for contact.
@@ -123,6 +150,7 @@ async def async_setup_entry(
     descriptions = _binary_sensor_descriptions(
         coordinator.classification.model_name or coordinator.device.device_model_name,
         coordinator.device.dpid,
+        is_environment_sensor=coordinator.classification.is_environment_sensor,
     )
     entities = [
         CozyLifeBinarySensor(coordinator, description)
@@ -168,6 +196,11 @@ class CozyLifeBinarySensor(CoordinatorEntity[CozyLifeCoordinator], BinarySensorE
         raw = self.coordinator.data.get(self._description.dpid)
         if raw is None:
             return None
+        if self._description.active_values is not None:
+            try:
+                return int(raw) in self._description.active_values
+            except (TypeError, ValueError):
+                return None
         return _coerce_binary_state(raw)
 
     @callback
