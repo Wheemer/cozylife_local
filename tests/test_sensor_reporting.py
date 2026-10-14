@@ -55,14 +55,17 @@ def test_vendor_catalog_interval_for_felicia_sensor() -> None:
     assert model.report_interval_seconds == 3600
 
 
-def test_dpid_14_is_a_reporting_choice_not_seconds() -> None:
+def test_dpid_14_is_vendor_raw_seconds() -> None:
     _, coordinator = _load_modules()
 
-    assert coordinator._decode_sensor_report_interval(0) == 1800
-    assert coordinator._decode_sensor_report_interval(1) == 3600
-    assert coordinator._decode_sensor_report_interval(15) == 28800
-    assert coordinator._decode_sensor_report_interval(600) is None
+    # The bundled CozyLife panel reads DPID 14 in seconds and writes choices as
+    # 1800..28800. Keep declared longer sensor cadences intact too.
+    assert coordinator._decode_sensor_report_interval(0) is None
+    assert coordinator._decode_sensor_report_interval(600) == 600
+    assert coordinator._decode_sensor_report_interval(1800) == 1800
     assert coordinator._decode_sensor_report_interval(3600) == 3600
+    assert coordinator._decode_sensor_report_interval(28800) == 28800
+    assert coordinator._decode_sensor_report_interval(86400) == 86400
 
 
 def test_placeholder_sensor_response_is_resampled_without_legacy_option(

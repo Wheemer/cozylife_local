@@ -37,7 +37,6 @@ SENSOR_CATCH_TIMEOUT = 120
 SENSOR_WAKE_SAMPLE_SECONDS = 4
 SENSOR_WAKE_SAMPLE_DELAY = 0.15
 SENSOR_REPORT_INTERVAL_STEP_SECONDS = 30 * 60
-SENSOR_REPORT_INTERVAL_MAX_INDEX = 15
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
@@ -62,12 +61,11 @@ def _decode_sensor_report_interval(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
 
-    # The CozyLife panel represents DPID 14 as index 0..15 for 30..480 min.
-    if 0 <= raw_value <= SENSOR_REPORT_INTERVAL_MAX_INDEX:
-        return (raw_value + 1) * SENSOR_REPORT_INTERVAL_STEP_SECONDS
-
-    # Preserve compatibility with firmware that reports an interval in seconds.
-    return raw_value if raw_value >= SENSOR_REPORT_INTERVAL_STEP_SECONDS else None
+    # The bundled CozyLife sensor panel reads this field directly as seconds.
+    # It writes 30-minute choices as 1800..28800.
+    # Other catalogued sensor models declare longer values (for example 86400),
+    # so retain every positive raw seconds value rather than remapping it.
+    return raw_value if raw_value > 0 else None
 
 
 def _next_sensor_wake_delay(report_interval: int) -> int:
@@ -430,9 +428,8 @@ class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             state_data = await self._async_add_hidden_switch_state(state_data)
             state_data = await self._async_add_hidden_light_state(state_data)
 
-            # DPID 14 is an enum in the vendor panel, not a seconds field.
-            # Read it as an observation only.  Writing the old seconds-valued
-            # option (for example, 600 or 1800) can select an invalid setting.
+            # The vendor sensor panel stores DPID 14 as raw seconds. It is
+            # observed here to align wake-window polling with the device.
             if self.classification.is_environment_sensor:
                 reported_interval = _decode_sensor_report_interval(
                     state_data.get(SENSOR_REPORT_INTERVAL_DPID)
