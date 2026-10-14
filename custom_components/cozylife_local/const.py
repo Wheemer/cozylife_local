@@ -17,6 +17,7 @@ LIGHT_POWER_MEMORY = '9'  # 0 = on, 1 = restore previous state
 LIGHT_SPEED = '8'          # raw ÷10 = effect speed percentage
 LIGHT_SENSITIVITY = '10'   # microphone sensitivity, range 1-10
 LIGHT_RGB_TURN = '11'      # LED color channel order
+LIGHT_STATIC_FADE = '20'   # static DreamColor fade toggle
 
 # Sensor DPIDs (temperature/humidity sensor, PID=Z4tRml)
 SENSOR_TEMPERATURE = '8'   # raw value ÷ 10 = °C

@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
+    LIGHT_STATIC_FADE,
     PLUG_BACKLIGHT_STATUS,
     PLUG_CHILD_LOCK,
     PLUG_OVERCURRENT_PROTECTION,
@@ -48,6 +49,10 @@ async def async_setup_entry(
     if (
         not coordinator.classification.supports_switch_entities
         and not supports_light_schedule_options(coordinator)
+        and not (
+            coordinator.classification.is_light
+            and LIGHT_STATIC_FADE in supported_dpids(coordinator)
+        )
     ):
         _LOGGER.debug(
             "Device %s (Type: %s, Source: %s) does not support switch entities "
@@ -90,6 +95,11 @@ async def async_setup_entry(
         entities.append(CozyLifePlugScheduleEnabledSwitch(coordinator))
     if supports_light_schedule_options(coordinator):
         entities.append(CozyLifeLightScheduleEnabledSwitch(coordinator))
+    if (
+        coordinator.classification.is_light
+        and LIGHT_STATIC_FADE in dpids
+    ):
+        entities.append(CozyLifeLightStaticFadeSwitch(coordinator))
 
     if entities:
         async_add_entities(entities)
@@ -184,6 +194,51 @@ class CozyLifeSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         self.async_write_ha_state()
+
+
+class CozyLifeLightStaticFadeSwitch(
+    CoordinatorEntity[CozyLifeCoordinator],
+    SwitchEntity,
+):
+    """Static DreamColor fade setting from the bundled light panel."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:gradient-horizontal"
+
+    def __init__(self, coordinator: CozyLifeCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = f"{coordinator.device.device_model_name} Static Effect Fade"
+        self._attr_unique_id = f"{coordinator.device.device_id}_light_static_fade"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device.device_id)},
+            name=self.coordinator.device.device_model_name,
+            manufacturer="CozyLife",
+            model=self.coordinator.device.pid,
+        )
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get(LIGHT_STATIC_FADE, 0))
+
+    async def _async_set_state(self, value: int) -> None:
+        if not await self.coordinator.device.async_set_state({LIGHT_STATIC_FADE: value}):
+            _LOGGER.warning(
+                "Failed to set static-effect fade for CozyLife device %s",
+                self.coordinator.device.ip_address,
+            )
+            return
+        updated = dict(self.coordinator.data)
+        updated[LIGHT_STATIC_FADE] = value
+        self.coordinator.async_set_updated_data(updated)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._async_set_state(1)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._async_set_state(0)
 
 
 class CozyLifePlugScheduleSwitchBase(SwitchEntity):

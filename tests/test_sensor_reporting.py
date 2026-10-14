@@ -189,6 +189,38 @@ def test_writable_options_use_only_device_advertised_dpids() -> None:
     assert options.supported_dpids(coordinator) == {"1", "9"}
 
 
+def test_dreamcolor_static_fade_matches_the_apk_values() -> None:
+    """Static-effect fade writes the panel's exact zero/one values."""
+    switch = _load_switch_module()
+    sent: list[dict[str, int]] = []
+
+    class Device:
+        device_model_name = "DreamColor"
+        device_id = "device"
+        pid = "pid"
+        ip_address = "192.0.2.1"
+
+        async def async_set_state(self, payload):
+            sent.append(payload)
+            return True
+
+    class Coordinator:
+        def __init__(self):
+            self.device = Device()
+            self.data = {"20": 0}
+
+        def async_set_updated_data(self, data):
+            self.data = data
+
+    entity = switch.CozyLifeLightStaticFadeSwitch(Coordinator())
+    assert not entity.is_on
+    asyncio.run(entity.async_turn_on())
+    assert entity.is_on
+    asyncio.run(entity.async_turn_off())
+
+    assert sent == [{"20": 1}, {"20": 0}]
+
+
 def test_dreamcolor_effect_numbers_match_the_apk_transforms() -> None:
     """Speed is percent ×10; microphone sensitivity is sent unchanged."""
     number = _load_number_module()
