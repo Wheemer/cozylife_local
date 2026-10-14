@@ -135,6 +135,7 @@ class CozyLifeSensorReportIntervalNumber(
         updated[SENSOR_REPORT_INTERVAL_DPID] = raw_value
         self.coordinator.async_set_updated_data(updated)
         self.coordinator._effective_report_interval = raw_value
+        self.coordinator._observed_wake_intervals = []
         self.coordinator._schedule_next_sensor_wake()
 
 

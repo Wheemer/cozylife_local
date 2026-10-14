@@ -587,6 +587,7 @@ def test_sensor_without_reported_interval_does_not_use_catalog_cadence() -> None
     # A previous implementation populated this from model metadata. A response
     # that omits DPID 14 must clear it rather than reusing that assumption.
     instance._effective_report_interval = 3600
+    instance._observed_wake_intervals = []
 
     assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215}
     assert instance._effective_report_interval is None
@@ -617,6 +618,7 @@ def test_sensor_queries_its_report_interval_when_status_omits_it() -> None:
     instance._uses_sensor_polling = False
     instance._current_sensor_response_at = None
     instance._effective_report_interval = None
+    instance._observed_wake_intervals = []
     instance._schedule_next_sensor_wake = lambda: None
 
     assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215, "14": 1800}
@@ -635,6 +637,17 @@ def test_dpid_14_is_vendor_raw_seconds() -> None:
     assert coordinator._decode_sensor_report_interval(28800) == 28800
     assert coordinator._decode_sensor_report_interval(86400) == 86400
 
+
+def test_sensor_wake_schedule_learns_the_observed_period() -> None:
+    """A stable sensor clock drift must not make every later wake window miss."""
+    _, coordinator = _load_modules()
+
+    # Upstream issue #9 records this model waking 3518--3524 seconds after a
+    # DPID 14 value of 3600. Median keeps an occasional late/missed sample out.
+    assert coordinator._scheduled_sensor_wake_interval(
+        3600, [3521, 3522, 3518, 3524]
+    ) == 3522
+    assert coordinator._scheduled_sensor_wake_interval(3600, [7200]) == 3600
 
 def test_placeholder_sensor_response_is_resampled_without_legacy_option(
     monkeypatch,
@@ -704,6 +717,7 @@ def test_timeout_starts_sensor_catch_polling_and_retains_data(monkeypatch) -> No
     instance._catch_started_at = None
     instance._last_sensor_response_at = datetime(2026, 10, 14, tzinfo=timezone.utc)
     instance._effective_report_interval = 3600
+    instance._observed_wake_intervals = []
     instance._first_success_wait_logged = False
     instance._missed_expected_wake_logged = False
     instance._fallback_logged = False

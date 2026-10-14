@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import math
+import statistics
 import time
 from datetime import datetime, timedelta
 from typing import Any
@@ -36,6 +37,9 @@ SENSOR_CATCH_POLL_INTERVAL = 1
 SENSOR_CATCH_TIMEOUT = 120
 SENSOR_WAKE_SAMPLE_SECONDS = 4
 SENSOR_WAKE_SAMPLE_DELAY = 0.15
+SENSOR_WAKE_INTERVAL_SAMPLE_LIMIT = 5
+SENSOR_WAKE_INTERVAL_MIN_RATIO = 0.75
+SENSOR_WAKE_INTERVAL_MAX_RATIO = 1.25
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
@@ -85,6 +89,25 @@ def _next_sensor_cycle_delay(
         SENSOR_CATCH_POLL_INTERVAL,
         int(next_window_elapsed - elapsed),
     )
+
+
+def _scheduled_sensor_wake_interval(
+    report_interval: int,
+    observed_intervals: list[float],
+) -> int:
+    """Return a sensor's measured wake period, or its reported fallback."""
+    valid_samples = [
+        interval
+        for interval in observed_intervals
+        if (
+            report_interval * SENSOR_WAKE_INTERVAL_MIN_RATIO
+            <= interval
+            <= report_interval * SENSOR_WAKE_INTERVAL_MAX_RATIO
+        )
+    ]
+    if not valid_samples:
+        return report_interval
+    return round(statistics.median(valid_samples))
 
 
 def _is_valid_environment_measurement(
@@ -140,6 +163,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.device = device
         self._effective_report_interval: int | None = None
+        self._observed_wake_intervals: list[float] = []
         self._missed_expected_wake_logged = False
         self._catch_started_at: datetime | None = None
         self._fallback_logged = False
@@ -165,6 +189,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         now = dt_util.utcnow()
         response_at = self._current_sensor_response_at or now
+        previous_response_at = getattr(self, "_last_sensor_response_at", None)
         self._last_sensor_response_at = response_at
         if self._effective_report_interval is None:
             # No vendor interval was supplied. Keep catching rather than making
@@ -172,11 +197,22 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.update_interval = timedelta(seconds=SENSOR_CATCH_POLL_INTERVAL)
             self._current_sensor_response_at = None
             return
-        delay = _next_sensor_cycle_delay(
-            response_at,
+
+        if previous_response_at is not None:
+            observed_interval = (response_at - previous_response_at).total_seconds()
+            if (
+                self._effective_report_interval * SENSOR_WAKE_INTERVAL_MIN_RATIO
+                <= observed_interval
+                <= self._effective_report_interval * SENSOR_WAKE_INTERVAL_MAX_RATIO
+            ):
+                self._observed_wake_intervals.append(observed_interval)
+                del self._observed_wake_intervals[:-SENSOR_WAKE_INTERVAL_SAMPLE_LIMIT]
+
+        wake_interval = _scheduled_sensor_wake_interval(
             self._effective_report_interval,
-            now,
+            self._observed_wake_intervals,
         )
+        delay = _next_sensor_cycle_delay(response_at, wake_interval, now)
         self.update_interval = timedelta(seconds=delay)
         self._missed_expected_wake_logged = False
         self._catch_started_at = None
@@ -185,10 +221,11 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._current_sensor_response_at = None
         _LOGGER.debug(
             "[COZYLIFE] Sensor %s responded; next poll window starts in %ss "
-            "(effective report interval: %ss)",
+            "(reported interval: %ss; scheduled interval: %ss)",
             self.device.ip_address,
             delay,
             self._effective_report_interval,
+            wake_interval,
         )
 
     def _schedule_sensor_catch_polling(self) -> None:
@@ -218,9 +255,13 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self._effective_report_interval is None:
                 self.update_interval = timedelta(seconds=SENSOR_CATCH_POLL_INTERVAL)
                 return
+            wake_interval = _scheduled_sensor_wake_interval(
+                self._effective_report_interval,
+                self._observed_wake_intervals,
+            )
             delay = _next_sensor_cycle_delay(
                 self._last_sensor_response_at,
-                self._effective_report_interval,
+                wake_interval,
                 now,
             )
             self.update_interval = timedelta(seconds=delay)
@@ -230,10 +271,11 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.debug(
                     "[COZYLIFE] Sensor %s did not respond within %ss of the "
                     "expected wake window; next poll window starts in %ss "
-                    "based on report_interval=%ss.",
+                    "based on scheduled interval=%ss (reported interval=%ss).",
                     self.device.ip_address,
                     SENSOR_CATCH_TIMEOUT,
                     delay,
+                    wake_interval,
                     self._effective_report_interval,
                 )
             return
@@ -447,9 +489,12 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # The vendor sensor panel stores DPID 14 as raw seconds. Only a
             # value the device reports may set the expected wake cadence.
             if self.classification.is_environment_sensor:
-                self._effective_report_interval = _decode_sensor_report_interval(
+                reported_interval = _decode_sensor_report_interval(
                     state_data.get(SENSOR_REPORT_INTERVAL_DPID)
                 )
+                if reported_interval != self._effective_report_interval:
+                    self._observed_wake_intervals.clear()
+                self._effective_report_interval = reported_interval
 
             state_data = self._preserve_environment_measurements(state_data)
             self._schedule_next_sensor_wake()
