@@ -105,6 +105,25 @@ def _load_select_module():
     return importlib.import_module("cozylife_local.select")
 
 
+def _load_button_module():
+    """Load the button platform against focused Home Assistant stubs."""
+    _load_modules()
+    _module("homeassistant.components")
+    button_component = _module("homeassistant.components.button")
+
+    class ButtonEntity:
+        pass
+
+    button_component.ButtonEntity = ButtonEntity
+    const = _module("homeassistant.const")
+    const.EntityCategory = types.SimpleNamespace(CONFIG="config")
+    entity = _module("homeassistant.helpers.entity")
+    entity.DeviceInfo = lambda **kwargs: kwargs
+    options = _module("cozylife_local.switch_options")
+    options.supported_dpids = lambda coordinator: set()
+    return importlib.import_module("cozylife_local.button")
+
+
 def _load_switch_module():
     """Load the switch platform against the focused Home Assistant stubs."""
     _load_modules()
@@ -153,6 +172,29 @@ def test_writable_options_use_only_device_advertised_dpids() -> None:
     )
 
     assert options.supported_dpids(coordinator) == {"1", "9"}
+
+
+def test_clear_device_log_button_matches_the_apk_command() -> None:
+    """The plug panel clears its log by writing DPID 43 with value one."""
+    button = _load_button_module()
+    sent: list[dict[str, int]] = []
+
+    class Device:
+        device_model_name = "Plug"
+        device_id = "device"
+        pid = "pid"
+        ip_address = "192.0.2.1"
+
+        async def async_set_state(self, payload):
+            sent.append(payload)
+            return True
+
+    entity = button.CozyLifeClearDeviceLogButton(
+        types.SimpleNamespace(device=Device())
+    )
+    asyncio.run(entity.async_press())
+
+    assert sent == [{"43": 1}]
 
 
 def test_total_energy_dpid_enables_plug_metering() -> None:
