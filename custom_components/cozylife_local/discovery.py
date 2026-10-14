@@ -68,7 +68,6 @@ _TEMPERATURE_HUMIDITY_SENSOR_PIDS = frozenset(
     }
 )
 _MULTI_SENSOR_PIDS = frozenset({"t8nvdb"})
-_SMART_SPEAKER_PIDS = frozenset({"GriFPh", "ZhTBTj"})
 _NAMED_GANG_COUNTS = {
     "one": 1,
     "two": 2,
@@ -116,7 +115,6 @@ class DeviceClassification:
     has_humidity_sensor: bool
     has_battery_sensor: bool
     is_sensor_category: bool
-    is_smart_speaker: bool
     is_light: bool
     is_switch: bool
     is_outlet: bool
@@ -302,7 +300,6 @@ def classify_device(
 
     is_known_motor = bool(model_info and model_info.type_name.lower() == "motor")
     is_sensor_category = bool(model_info and model_info.type_name.lower() == "sensor")
-    is_smart_speaker = is_direct_local and pid in _SMART_SPEAKER_PIDS
     is_outlet = bool(model_info and _is_outlet_name(model_info.model_name))
     is_generic_power_device = _is_generic_power_device(model_info)
     has_light_capability = (
@@ -361,7 +358,6 @@ def classify_device(
         has_humidity_sensor=has_humidity_sensor,
         has_battery_sensor=has_battery_sensor,
         is_sensor_category=is_sensor_category,
-        is_smart_speaker=is_smart_speaker,
         is_light=is_light,
         is_switch=is_switch,
         is_outlet=is_outlet,

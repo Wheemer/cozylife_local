@@ -50,7 +50,6 @@ PLATFORMS = [
     "number",
     "select",
     "time",
-    "media_player",
 ]
 
 DEFAULT_MIN_KELVIN = 2000
