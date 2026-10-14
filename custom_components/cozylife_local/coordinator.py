@@ -406,6 +406,29 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return {**state_data, **hidden_state}
 
+    async def _async_add_hidden_sensor_state(
+        self,
+        state_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Query the report interval when an awake sensor omits it from status."""
+        if (
+            not self.classification.is_environment_sensor
+            or SENSOR_REPORT_INTERVAL_DPID in state_data
+            or SENSOR_REPORT_INTERVAL_DPID not in set(self.device.dpid or [])
+        ):
+            return state_data
+
+        hidden_state = await self.device.async_get_state([SENSOR_REPORT_INTERVAL_DPID])
+        if hidden_state is None:
+            _LOGGER.debug(
+                "[COZYLIFE] Failed to query sensor report interval DPID %s from %s",
+                SENSOR_REPORT_INTERVAL_DPID,
+                self.device.ip_address,
+            )
+            return state_data
+
+        return {**state_data, **hidden_state}
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from device."""
         try:
@@ -420,6 +443,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             state_data = await self._async_get_environment_state()
             state_data = await self._async_add_hidden_switch_state(state_data)
             state_data = await self._async_add_hidden_light_state(state_data)
+            state_data = await self._async_add_hidden_sensor_state(state_data)
 
             # The vendor sensor panel stores DPID 14 as raw seconds. Only a
             # value the device reports may set the expected wake cadence.

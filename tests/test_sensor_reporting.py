@@ -560,7 +560,7 @@ def test_sensor_without_reported_interval_does_not_use_catalog_cadence() -> None
         dpid = ("4", "8", "14")
         ip_address = "192.0.2.1"
 
-        async def async_get_state(self):
+        async def async_get_state(self, _dpids=None):
             return {"4": 48, "8": 215}
 
     instance = object.__new__(coordinator_module.CozyLifeCoordinator)
@@ -580,6 +580,36 @@ def test_sensor_without_reported_interval_does_not_use_catalog_cadence() -> None
     assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215}
     assert instance._effective_report_interval is None
     assert instance.update_interval == timedelta(seconds=1)
+
+def test_sensor_queries_its_report_interval_when_status_omits_it() -> None:
+    """DPID 14 is queried directly while the sensor is awake."""
+    _, coordinator_module = _load_modules()
+
+    class Device:
+        device_id = "device"
+        dpid = ("4", "8", "14")
+        ip_address = "192.0.2.1"
+
+        async def async_get_state(self, dpids=None):
+            if dpids == ["14"]:
+                return {"14": 1800}
+            return {"4": 48, "8": 215}
+
+    instance = object.__new__(coordinator_module.CozyLifeCoordinator)
+    instance.device = Device()
+    instance.classification = types.SimpleNamespace(
+        is_environment_sensor=True,
+        supports_switch_entities=False,
+        is_light=False,
+    )
+    instance.data = {}
+    instance._uses_sensor_polling = False
+    instance._current_sensor_response_at = None
+    instance._effective_report_interval = None
+    instance._schedule_next_sensor_wake = lambda: None
+
+    assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215, "14": 1800}
+    assert instance._effective_report_interval == 1800
 
 
 def test_dpid_14_is_vendor_raw_seconds() -> None:
