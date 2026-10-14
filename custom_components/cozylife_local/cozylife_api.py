@@ -16,6 +16,13 @@ CMD_QUERY = 2
 CMD_SET = 3
 DPID_QUERY_ATTEMPTS = 3
 
+# CozyLife's own Android client uses CMD_QUERY with attr [0] for device
+# properties and attr [1] for the current device status. Keep the property
+# selector as the low-level default for discovery, but make normal state reads
+# explicitly request status below.
+QUERY_PROPERTIES = 0
+QUERY_STATUS = 1
+
 def _get_sn() -> str:
     """Generates a unique sequence number based on current timestamp."""
     return str(int(time.time() * 1000))
@@ -159,7 +166,7 @@ class CozyLifeDevice:
         elif cmd == CMD_QUERY:
             return {
                 'pv': 0, 'cmd': cmd, 'sn': sn,
-                'msg': {'attr': payload.get('attr', [0])}
+                'msg': {'attr': payload.get('attr', [QUERY_PROPERTIES])}
             }
         elif cmd == CMD_INFO:
             return {'pv': 0, 'cmd': cmd, 'sn': sn, 'msg': {}}
@@ -222,8 +229,8 @@ class CozyLifeDevice:
         return True
 
     async def async_get_state(self, dpids: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
-        """Queries the current state of the device."""
-        payload = {}
+        """Query the current device status using CozyLife's status selector."""
+        payload = {"attr": [QUERY_STATUS]}
         if dpids:
             payload["attr"] = [int(dpid) for dpid in dpids]
 

@@ -61,8 +61,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = CozyLifeCoordinator(hass, device, entry)
 
     if coordinator.is_sensor:
-        # Sensors sleep for 30+ min — don't block setup on first refresh.
-        # Seed with empty data so polling starts, entities update on first successful poll.
+        # Do not block setup while an intermittently reachable sensor is unavailable.
+        # Seed with empty data so entities update on the first successful poll.
         coordinator.async_set_updated_data({})
     else:
         await coordinator.async_config_entry_first_refresh()
