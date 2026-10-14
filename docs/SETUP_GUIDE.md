@@ -169,59 +169,15 @@ Battery-powered sensors (such as environment sensors and button controllers) use
 6. **Activating the Sensor**: To push the first set of readings immediately:
    * Press the physical button on the sensor.
    * Or, breathe warm air onto the sensor grill to trigger a delta event (temperature/humidity change) that forces a wake-up broadcast.
-7. **Subsequent Polls**: The integration establishes a dedicated polling window based on the device's reported configuration interval. The standard firmware interval is **1800 seconds / 30 minutes**. An experimental option allows **600 seconds / 10 minutes** on compatible firmware.
+7. **Subsequent Polls**: The integration catch-polls until the sensor responds, then bases its wake window on the `DPID 14` interval reported by that device. This is raw seconds; the integration does not assume a vendor-wide cadence.
 
-> [!WARNING]
-> The experimental `600s` interval is not guaranteed. In the latest long-run router CSV check for a `Z4tRml` sensor, 58 of 61 post-baseline transitions stayed near 10 minutes, with a best run of 22 consecutive short cycles. Three cycles still fell back to about `1800s` / 30 minutes. Keep the standard `1800s` interval when predictable update timing matters more than faster readings.
 
 #### Restart Behavior
 
-Home Assistant cannot change a sleeping sensor's report interval while the sensor is asleep. After Home Assistant restarts, the integration restores the configured interval from the config entry and begins catch polling, but the value is only pushed to the device when the sensor next wakes.
+After Home Assistant restarts, the integration resumes catch polling. Once the sensor responds, it reads the currently reported `DPID 14` setting again before scheduling later wake windows.
 
-For the standard `1800s` interval, this usually means the first post-restart update may take up to about 30 minutes unless you wake the sensor manually. For the experimental `600s` interval, the same rule applies: Home Assistant will reinforce the shorter value when the sensor wakes, but the sensor firmware can still occasionally report or revert to `1800s`.
+The first post-restart update depends on the device's own wake and report setting. Waking it manually can produce a reading sooner.
 
-#### Blocking WAN for Experimental Short Intervals
-
-If you are testing the experimental `600s` interval, you can optionally block the sensor's WAN/internet access at the router while keeping local LAN access to Home Assistant open. This reduces external variables while testing, but firmware behavior can still cause a fallback to `1800s`.
-
-Use this network shape:
-
-```text
-Home Assistant <---- LAN allowed ----> CozyLife sensor
-CozyLife sensor ---- WAN blocked ----> Internet / vendor cloud
-```
-
-Before adding any block rule:
-
-1. Create a DHCP reservation for the sensor so its IP address does not change.
-2. Confirm Home Assistant and the sensor are on the same LAN, or on routed VLANs that can reach each other.
-3. Allow TCP/UDP port `5555` between Home Assistant and the sensor.
-4. Block only forwarding from the sensor IP to WAN/internet.
-5. Do not enable AP/client isolation or put the sensor on an isolated guest network.
-
-WAN blocking does not guarantee that short intervals will persist. Some firmware may still report or revert to `1800s` even when internet access is blocked.
-
-OpenWrt / iStoreOS UCI example:
-
-```sh
-uci add firewall rule
-uci set firewall.@rule[-1].name='Block-CozyLife-sensor-WAN'
-uci set firewall.@rule[-1].src='lan'
-uci set firewall.@rule[-1].dest='wan'
-uci set firewall.@rule[-1].src_ip='192.168.3.124'
-uci set firewall.@rule[-1].proto='all'
-uci set firewall.@rule[-1].target='REJECT'
-uci commit firewall
-/etc/init.d/firewall reload
-```
-
-MikroTik RouterOS example:
-
-```routeros
-/ip firewall filter add chain=forward src-address=192.168.3.124 out-interface-list=WAN action=drop comment="Block CozyLife sensor WAN"
-```
-
-For TP-Link, ASUS, UniFi, pfSense/OPNsense, Eero, Deco, Google/Nest WiFi, and ISP routers, use the router's client-specific internet block, parental control, traffic rule, or firewall rule feature. The important requirement is to block only internet access for the sensor, not local traffic between Home Assistant and the sensor.
 
 ---
 
