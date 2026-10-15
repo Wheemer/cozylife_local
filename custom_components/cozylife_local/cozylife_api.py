@@ -14,7 +14,6 @@ _RAW_LOGGER.setLevel(logging.INFO)
 COZYLIFE_DISCOVERY_PORT = 6095
 COZYLIFE_DISCOVERY_ADDRESS = "255.255.255.255"
 COZYLIFE_DISCOVERY_RETRY_INTERVAL = 5.0
-COZYLIFE_DISCOVERY_BROADCAST_ATTEMPTS = 16
 COZYLIFE_PORT = 5555
 CMD_INFO = 0
 CMD_QUERY = 2
@@ -115,15 +114,11 @@ class CozyLifeDevice:
                 family=socket.AF_INET,
                 allow_broadcast=True,
             )
-            message = (
-                json.dumps(self._create_message(CMD_INFO, {}), separators=(",", ":"))
-                + "\r\n"
+            message = json.dumps(self._create_message(CMD_INFO, {}), separators=(",", ":")) + "\r\n"
+            transport.sendto(
+                message.encode("utf-8"),
+                (COZYLIFE_DISCOVERY_ADDRESS, COZYLIFE_DISCOVERY_PORT),
             )
-            for _ in range(COZYLIFE_DISCOVERY_BROADCAST_ATTEMPTS):
-                transport.sendto(
-                    message.encode("utf-8"),
-                    (COZYLIFE_DISCOVERY_ADDRESS, COZYLIFE_DISCOVERY_PORT),
-                )
             payload = await asyncio.wait_for(reply, timeout=self._timeout)
         except (asyncio.TimeoutError, OSError):
             return False
