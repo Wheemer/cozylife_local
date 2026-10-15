@@ -352,10 +352,6 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_get_environment_state(self) -> dict[str, Any]:
         """Sample a waking environment sensor until real measurements appear."""
         state_data = await self.device.async_get_state()
-        if state_data is None and self._uses_sensor_polling:
-            refresh_ip = getattr(self.device, "async_refresh_ip_from_discovery", None)
-            if refresh_ip is not None and await refresh_ip():
-                state_data = await self.device.async_get_state()
         if state_data is None:
             raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
 

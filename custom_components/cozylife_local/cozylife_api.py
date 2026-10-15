@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import socket
 import time
 from typing import Any, Dict, List, Optional
 
@@ -11,9 +10,6 @@ _LOGGER = logging.getLogger(__name__)
 _RAW_LOGGER = logging.getLogger(f"{__name__}.raw")
 _RAW_LOGGER.setLevel(logging.INFO)
 
-COZYLIFE_DISCOVERY_PORT = 6095
-COZYLIFE_DISCOVERY_ADDRESS = "255.255.255.255"
-COZYLIFE_DISCOVERY_RETRY_INTERVAL = 5.0
 COZYLIFE_PORT = 5555
 CMD_INFO = 0
 CMD_QUERY = 2
@@ -43,7 +39,6 @@ class CozyLifeDevice:
         self._pid: Optional[str] = None
         self._device_model_name: Optional[str] = None
         self._dpid: Optional[List[str]] = None
-        self._last_discovery_attempt = 0.0
         self._device_type_code: Optional[str] = None
 
     @property
@@ -80,63 +75,6 @@ class CozyLifeDevice:
         self._device_model_name = (
             model_info.model_name if model_info else f"CozyLife Device ({pid})"
         )
-
-    async def async_refresh_ip_from_discovery(self) -> bool:
-        """Refresh this device LAN IP using CozyLife UDP discovery."""
-        if not self._device_id:
-            return False
-        now = time.monotonic()
-        if now - self._last_discovery_attempt < COZYLIFE_DISCOVERY_RETRY_INTERVAL:
-            return False
-        self._last_discovery_attempt = now
-
-        loop = asyncio.get_running_loop()
-        reply: asyncio.Future[dict[str, Any] | None] = loop.create_future()
-        device_id = self._device_id
-
-        class DiscoveryProtocol(asyncio.DatagramProtocol):
-            def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-                if reply.done():
-                    return
-                try:
-                    payload = json.loads(data.decode("utf-8").strip())
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    return
-                if payload.get("did") != device_id:
-                    return
-                payload.setdefault("ip", addr[0])
-                reply.set_result(payload)
-
-        transport = None
-        try:
-            transport, _protocol = await loop.create_datagram_endpoint(
-                DiscoveryProtocol,
-                family=socket.AF_INET,
-                allow_broadcast=True,
-            )
-            message = json.dumps(self._create_message(CMD_INFO, {}), separators=(",", ":")) + "\r\n"
-            transport.sendto(
-                message.encode("utf-8"),
-                (COZYLIFE_DISCOVERY_ADDRESS, COZYLIFE_DISCOVERY_PORT),
-            )
-            payload = await asyncio.wait_for(reply, timeout=self._timeout)
-        except (asyncio.TimeoutError, OSError):
-            return False
-        finally:
-            if transport is not None:
-                transport.close()
-
-        if not payload or not isinstance(payload.get("ip"), str):
-            return False
-        if payload["ip"] != self._ip_address:
-            _LOGGER.info(
-                "CozyLife UDP discovery updated %s from %s to %s",
-                self._device_id,
-                self._ip_address,
-                payload["ip"],
-            )
-            self._ip_address = payload["ip"]
-        return True
 
     async def _connect(self):
         """Establishes an asynchronous TCP connection to the device."""
