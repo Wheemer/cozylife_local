@@ -34,6 +34,8 @@ _UPDATE_LOGGER.setLevel(logging.INFO)
 UPDATE_INTERVAL = timedelta(seconds=30)
 SENSOR_WAKE_WINDOW_LEAD = 10
 SENSOR_CATCH_POLL_INTERVAL = 1
+# CozyLife APK Config.TCP_GLOAL_CONNECT_TIMEOUT is 1000 ms.
+SENSOR_CATCH_REQUEST_TIMEOUT = 1.0
 SENSOR_CATCH_TIMEOUT = 120
 SENSOR_WAKE_SAMPLE_SECONDS = 4
 SENSOR_WAKE_SAMPLE_DELAY = 0.15
@@ -162,6 +164,10 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=entry,
         )
         self.device = device
+        if self._uses_sensor_polling:
+            # Each short sensor wake must receive a new local request; keep the
+            # full connect-and-read attempt within the APK's one-second budget.
+            self.device.set_timeout(SENSOR_CATCH_REQUEST_TIMEOUT)
         self._entry = entry
         self._effective_report_interval: int | None = None
         self._observed_wake_intervals: list[float] = []

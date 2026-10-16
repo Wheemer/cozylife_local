@@ -692,6 +692,7 @@ def test_connect_timeout_is_a_normal_no_response() -> None:
         raise asyncio.TimeoutError
 
     instance = object.__new__(api.CozyLifeDevice)
+    instance._timeout = 1.0
     instance._connect = timeout_connect
     instance._disconnect = lambda: None
 

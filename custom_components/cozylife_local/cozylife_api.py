@@ -58,6 +58,12 @@ class CozyLifeDevice:
     def device_type_code(self) -> Optional[str]:
         return self._device_type_code
 
+    def set_timeout(self, timeout: float) -> None:
+        """Set the bounded duration for one local request attempt."""
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
+        self._timeout = timeout
+
     def restore_from_cache(self, device_id: str, pid: str, device_type_code: str, dpids: List[str]) -> None:
         """Restore device info from cached config entry data without contacting the device."""
         model_info = get_model_info(pid)
@@ -98,6 +104,7 @@ class CozyLifeDevice:
         with a matching sequence number (sn) is found or a timeout occurs.
         """
         try:
+            end_time = time.monotonic() + self._timeout
             await self._connect()
             message = self._create_message(cmd, payload)
             sent_sn = message.get('sn')
@@ -107,7 +114,6 @@ class CozyLifeDevice:
             self._writer.write(encoded_message)
             await self._writer.drain()
 
-            end_time = time.monotonic() + self._timeout
             while time.monotonic() < end_time:
                 try:
                     remaining_time = end_time - time.monotonic()
