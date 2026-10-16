@@ -30,7 +30,6 @@ UPDATE_INTERVAL = timedelta(seconds=30)
 SENSOR_DISCOVERY_INTERVAL_SECONDS = 10.0
 SENSOR_CONNECT_TIMEOUT_SECONDS = 0.2
 SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.2
-SENSOR_WAKE_PROBE_CONCURRENCY = 1
 DEVICE_DISCOVERY_INTERVAL_SECONDS = 30.0
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
@@ -103,12 +102,10 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.device = device
         self._udp_discovery: CozyLifeUdpDiscovery | None = None
         self._sensor_probe_task: asyncio.Task[None] | None = None
-        self._sensor_probe_requests: set[asyncio.Task[bool]] = set()
         if self._uses_sensor_polling:
-            # The APK's TCP_GLOAL_CONNECT_TIMEOUT is 1000 ms.  Keep that
-            # connection deadline independent from the probe cadence: a
-            # 250 ms deadline can abort the TCP handshake before a waking
-            # device is able to accept the request.
+            # A waking unit answers its local TCP request immediately. Limit
+            # each failed attempt so a sleeping unit cannot delay the next
+            # wake-window probe.
             self.device.set_timeout(SENSOR_CONNECT_TIMEOUT_SECONDS)
             self.device.set_message_listener(self._async_handle_device_message)
         self._entry = entry
@@ -129,9 +126,8 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         await self._udp_discovery.async_start()
         if self._uses_sensor_polling:
-            # A sleeping sensor can legitimately leave several one-second
-            # connection attempts in flight. Keep those attempts entirely
-            # outside Home Assistant's startup task tree.
+            # Keep the wake-window work outside Home Assistant's startup task
+            # tree, but serialize the actual connection attempts.
             self._sensor_probe_task = self.hass.async_create_background_task(
                 self._async_probe_sensor_wake_window(),
                 "cozylife sensor wake-window probing",
@@ -140,14 +136,13 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_probe_sensor_wake_window(self) -> None:
         """Keep local connection attempts present through a short wake window."""
         while True:
-            if len(self._sensor_probe_requests) < SENSOR_WAKE_PROBE_CONCURRENCY:
-                request = self.hass.async_create_background_task(
-                    self.device.async_send_status(),
-                    "cozylife sensor status probe",
-                )
-                self._sensor_probe_requests.add(request)
-                request.add_done_callback(self._sensor_probe_requests.discard)
-            await asyncio.sleep(SENSOR_WAKE_PROBE_INTERVAL_SECONDS)
+            started = self.hass.loop.time()
+            await self.device.async_send_status()
+            remaining = SENSOR_WAKE_PROBE_INTERVAL_SECONDS - (
+                self.hass.loop.time() - started
+            )
+            if remaining > 0:
+                await asyncio.sleep(remaining)
 
     async def _async_handle_discovered_address(self, ip_address: str) -> None:
         """Use an APK discovery reply to refresh this entry's local address."""
@@ -182,9 +177,6 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except asyncio.CancelledError:
                 pass
             self._sensor_probe_task = None
-        for request in self._sensor_probe_requests:
-            request.cancel()
-        self._sensor_probe_requests.clear()
         await self.device.async_close()
 
     async def _async_handle_device_message(self, frame: dict[str, Any]) -> None:
