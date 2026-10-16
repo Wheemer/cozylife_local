@@ -28,7 +28,12 @@ _UPDATE_LOGGER.setLevel(logging.INFO)
 
 UPDATE_INTERVAL = timedelta(seconds=30)
 SENSOR_DISCOVERY_INTERVAL_SECONDS = 10.0
-SENSOR_CONNECT_TIMEOUT_SECONDS = 1.0
+# The APK creates its first local socket without applying its short reconnect
+# timeout. A one-second asyncio cancellation tears down an in-flight SYN
+# before a sleeping sensor can wake and acknowledge it. Bound an HA attempt
+# to the APK daemon's socket-pool cycle instead, so it stays cancellable on
+# unload while still spanning a wake window.
+SENSOR_CONNECT_TIMEOUT_SECONDS = 10.0
 SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.25
 SENSOR_WAKE_PROBE_CONCURRENCY = 4
 DEVICE_DISCOVERY_INTERVAL_SECONDS = 30.0
