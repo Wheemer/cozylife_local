@@ -16,6 +16,7 @@ COZYLIFE_DISCOVERY_PORT = 6095
 COZYLIFE_DISCOVERY_ADDRESS = "255.255.255.255"
 # WifiUdpServer's AppDeamon checker calls startSearchDevices every ten seconds.
 COZYLIFE_DISCOVERY_INTERVAL = 10.0
+COZYLIFE_DISCOVERY_STARTUP_BROADCASTS = 17
 
 CMD_INFO = 0
 CMD_QUERY = 2
@@ -148,9 +149,14 @@ class CozyLifeDevice:
 
         async def discovery_loop() -> None:
             try:
-                while True:
+                # On a Wi-Fi transition, WifiUdpServer sends one discovery
+                # request followed by sixteen immediate repeats before its
+                # ten-second AppDeamon cadence begins.
+                for _ in range(COZYLIFE_DISCOVERY_STARTUP_BROADCASTS):
                     self._send_discovery_broadcast()
+                while True:
                     await asyncio.sleep(COZYLIFE_DISCOVERY_INTERVAL)
+                    self._send_discovery_broadcast()
             finally:
                 transport.close()
                 if self._discovery_transport is transport:
