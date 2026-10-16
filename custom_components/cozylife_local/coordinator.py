@@ -84,7 +84,11 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         # The APK keeps a socket reader alive; sensor reports arrive on that
         # stream rather than through guessed wake-window polling.
-        interval = UPDATE_INTERVAL
+        # Sensor updates are delivered by the local socket reader after a
+        # matching UDP discovery reply.  A DataUpdateCoordinator interval
+        # would call ``_async_update_data`` directly and bypass the APK's
+        # discovery gate.
+        interval = None if self._uses_sensor_polling else UPDATE_INTERVAL
 
         super().__init__(
             hass,

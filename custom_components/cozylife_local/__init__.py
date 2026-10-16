@@ -76,12 +76,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_start_discovery()
 
     if coordinator.is_sensor:
-        # Do not block setup while an intermittently reachable sensor is unavailable.
-        # Seed with empty data so entities update on the first successful poll.
+        # Do not block setup while the sensor is unavailable.  Its local
+        # socket is opened only from the matching UDP-discovery callback;
+        # calling async_request_refresh here would bypass the APK's gate.
         coordinator.async_set_updated_data({})
-        # Match the app's device-activation request: open the persistent local
-        # reader immediately, then let incoming frames drive entity updates.
-        hass.async_create_task(coordinator.async_request_refresh())
     else:
         await coordinator.async_config_entry_first_refresh()
 
