@@ -65,3 +65,16 @@ def test_discovery_rejects_missing_or_top_level_ip() -> None:
     assert api.CozyLifeDevice._discovery_ip(
         {"did": "expected-device", "ip": "192.0.2.44"}, "expected-device"
     ) is None
+
+
+def test_persistent_discovery_updates_only_the_matching_device() -> None:
+    device = api.CozyLifeDevice("192.0.2.1")
+    device._device_id = "expected-device"
+
+    device._handle_discovery_packet(
+        b'{"msg":{"did":"other-device","ip":"192.0.2.99"}}\r\n'
+    )
+    assert device.ip_address == "192.0.2.1"
+
+    device._handle_discovery_packet(b'{"msg":{"did":"expected-device","ip":"192.0.2.44"}}\r\n')
+    assert device.ip_address == "192.0.2.44"
