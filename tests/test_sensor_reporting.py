@@ -771,3 +771,13 @@ def test_direct_door_and_water_sensors_expose_vendor_battery_dpid() -> None:
     assert water.is_direct_local and water.is_sensor_category
     assert not door.is_environment_sensor and not water.is_environment_sensor
     assert door.has_battery_sensor and water.has_battery_sensor
+
+def test_temperature_humidity_profile_keeps_its_full_entity_set() -> None:
+    """Sleeping-profile cache gaps must not hide known sensor entities."""
+    discovery, _ = _load_modules()
+    classified = discovery.classify_device("Z4tRml", "03", ["8"])
+
+    assert classified.is_environment_sensor
+    assert classified.has_temperature_sensor
+    assert classified.has_humidity_sensor
+    assert classified.has_battery_sensor

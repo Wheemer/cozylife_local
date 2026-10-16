@@ -294,6 +294,8 @@ def classify_device(
         model_info.network_type in _DIRECT_LOCAL_NETWORK_TYPES
     )
 
+    is_temperature_humidity_profile = pid in _TEMPERATURE_HUMIDITY_SENSOR_PIDS
+
     is_environment_sensor = (
         is_direct_local
         and (
@@ -307,17 +309,24 @@ def classify_device(
             )
         )
     )
-    has_temperature_sensor = is_environment_sensor and SENSOR_TEMPERATURE in dpid_set
-    has_humidity_sensor = is_environment_sensor and SENSOR_HUMIDITY in dpid_set
+    # The APK's named temperature/humidity profiles have a fixed local entity
+    # set. Cached discovery data can be incomplete while the sensor sleeps,
+    # so do not suppress humidity or battery merely because that stale cache
+    # contains only DPID 8.
+    has_temperature_sensor = is_environment_sensor and (
+        SENSOR_TEMPERATURE in dpid_set or is_temperature_humidity_profile
+    )
+    has_humidity_sensor = is_environment_sensor and (
+        SENSOR_HUMIDITY in dpid_set or is_temperature_humidity_profile
+    )
     # The bundled CozyLife sensor panel renders DPID 9 as ``data[9] / 10``
     # for battery level. Door and water sensors expose that same DPID even
     # though they do not expose temperature/humidity measurements.
-    has_battery_sensor = (
-        is_direct_local
-        and SENSOR_BATTERY in dpid_set
-        and (is_sensor_category or is_environment_sensor)
-    )
+    has_battery_sensor = is_direct_local and (
+        (SENSOR_BATTERY in dpid_set and (is_sensor_category or is_environment_sensor))
+        or is_temperature_humidity_profile
 
+    )
     if model_info:
         effective_type_code = model_info.type_code
         source = "catalog"
