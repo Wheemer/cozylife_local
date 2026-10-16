@@ -43,12 +43,14 @@ class _CozyLifeDiscoveryProtocol(asyncio.DatagramProtocol):
 
 
 class CozyLifeUdpDiscovery:
-    """Keep the APK's local UDP discovery path available for a sleeping device.
+    """Keep the APK's local UDP discovery path available for a device.
 
     The APK broadcasts ``cmd: 0`` to UDP/6095 and matches reply ``msg.did`` to
-    refresh the local TCP address. A sleeping sensor may only hear one of
-    these broadcasts, so this listener keeps using that exact request while
-    the Home Assistant entry is loaded.
+    refresh the local TCP address.  The APK's ``UdpBoardcastChecker`` starts
+    this discovery cycle from its 10-second application daemon.  Its TCP
+    writer admits a status command only after that same discovery cache has a
+    reply for the device, so callers of this class must likewise wait for
+    ``found`` before opening TCP.
     """
 
     def __init__(
@@ -91,7 +93,7 @@ class CozyLifeUdpDiscovery:
             self._transport = None
 
     async def _async_broadcast_loop(self) -> None:
-        """Send the exact APK UDP discovery request at the requested cadence."""
+        """Send the exact APK UDP discovery request on its daemon cadence."""
         while True:
             transport = self._transport
             if transport is None:

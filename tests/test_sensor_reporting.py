@@ -585,6 +585,32 @@ def test_persistent_sensor_frame_updates_coordinator() -> None:
     assert received == [{"4": 49, "8": 216, "9": 1000}]
 
 
+def test_sensor_status_write_requires_a_matching_udp_discovery_reply() -> None:
+    """Sensors write APK-style local status only from the UDP-reply path."""
+    _, coordinator_module = _load_modules()
+
+    class Device:
+        async def async_update_ip_address(self, _ip_address):
+            return False
+
+        async def async_send_status(self):
+            self.status_writes += 1
+
+        status_writes = 0
+
+    instance = object.__new__(coordinator_module.CozyLifeCoordinator)
+    instance.device = Device()
+    instance._uses_sensor_polling = True
+    instance._entry = types.SimpleNamespace(data={"ip_address": "192.0.2.1"})
+    instance.hass = types.SimpleNamespace(
+        config_entries=types.SimpleNamespace(async_update_entry=lambda *_args, **_kwargs: None)
+    )
+
+    asyncio.run(instance._async_handle_discovered_address("192.0.2.1"))
+
+    assert instance.device.status_writes == 1
+
+
 def test_placeholder_sensor_response_is_not_published() -> None:
     """The stream ignores zero placeholders instead of recording false spikes."""
     _, coordinator_module = _load_modules()
