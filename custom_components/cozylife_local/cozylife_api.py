@@ -3,7 +3,7 @@ import inspect
 import json
 import logging
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from .discovery import get_model_info
 
@@ -12,10 +12,97 @@ _RAW_LOGGER = logging.getLogger(f"{__name__}.raw")
 _RAW_LOGGER.setLevel(logging.INFO)
 
 COZYLIFE_PORT = 5555
+COZYLIFE_UDP_DISCOVERY_PORT = 6095
 CMD_INFO = 0
 CMD_QUERY = 2
 CMD_SET = 3
 DPID_QUERY_ATTEMPTS = 3
+
+
+class _CozyLifeDiscoveryProtocol(asyncio.DatagramProtocol):
+    """Receive Cozy Life's local UDP discovery replies."""
+
+    def __init__(self, device_id: str, found: Callable[[str], Awaitable[None]]) -> None:
+        self._device_id = device_id
+        self._found = found
+
+    def datagram_received(self, data: bytes, _addr: tuple[str, int]) -> None:
+        """Accept only the reply for the configured Cozy Life device."""
+        try:
+            frame = json.loads(data.decode("utf-8").split("\r\n", 1)[0])
+            message = frame["msg"]
+            if message.get("did") != self._device_id:
+                return
+            ip_address = message.get("ip")
+            if not isinstance(ip_address, str) or not ip_address:
+                return
+        except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+            return
+
+        asyncio.create_task(self._found(ip_address))
+
+
+class CozyLifeUdpDiscovery:
+    """Keep the APK's local UDP discovery path available for a sleeping device.
+
+    The APK broadcasts ``cmd: 0`` to UDP/6095 and matches reply ``msg.did`` to
+    refresh the local TCP address. A sleeping sensor may only hear one of
+    these broadcasts, so this listener keeps using that exact request while
+    the Home Assistant entry is loaded.
+    """
+
+    def __init__(
+        self,
+        device_id: str,
+        found: Callable[[str], Awaitable[None]],
+        interval: float,
+    ) -> None:
+        self._device_id = device_id
+        self._found = found
+        self._interval = interval
+        self._transport: asyncio.DatagramTransport | None = None
+        self._task: asyncio.Task[None] | None = None
+
+    async def async_start(self) -> None:
+        """Open one ephemeral UDP socket, as the Cozy Life APK does."""
+        loop = asyncio.get_running_loop()
+        transport, _protocol = await loop.create_datagram_endpoint(
+            lambda: _CozyLifeDiscoveryProtocol(self._device_id, self._found),
+            local_addr=("0.0.0.0", 0),
+            allow_broadcast=True,
+        )
+        self._transport = transport
+        self._task = asyncio.create_task(
+            self._async_broadcast_loop(),
+            name=f"cozylife-discovery-{self._device_id}",
+        )
+
+    async def async_stop(self) -> None:
+        """Stop discovery and release its UDP socket."""
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+        if self._transport:
+            self._transport.close()
+            self._transport = None
+
+    async def _async_broadcast_loop(self) -> None:
+        """Send the exact APK UDP discovery request at the requested cadence."""
+        while True:
+            transport = self._transport
+            if transport is None:
+                return
+            message = {"cmd": 0, "pv": 0, "sn": _get_sn(), "msg": {}}
+            transport.sendto(
+                (json.dumps(message, separators=(",", ":")) + "\r\n").encode(),
+                ("255.255.255.255", COZYLIFE_UDP_DISCOVERY_PORT),
+            )
+            await asyncio.sleep(self._interval)
+
 
 def _get_sn() -> str:
     """Generates a unique sequence number based on current timestamp."""
@@ -72,6 +159,15 @@ class CozyLifeDevice:
     def set_message_listener(self, listener: Callable[[Dict[str, Any]], Any]) -> None:
         """Receive every frame delivered by the device's persistent socket."""
         self._message_listener = listener
+
+    async def async_update_ip_address(self, ip_address: str) -> bool:
+        """Replace a discovered address and discard only the old TCP socket."""
+        if ip_address == self._ip_address:
+            return False
+        await self.async_close()
+        self._ip_address = ip_address
+        _LOGGER.info("CozyLife device %s moved to %s", self._device_id, ip_address)
+        return True
 
     def restore_from_cache(self, device_id: str, pid: str, device_type_code: str, dpids: List[str]) -> None:
         """Restore device info from cached config entry data without contacting the device."""

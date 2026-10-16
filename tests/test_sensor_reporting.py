@@ -51,6 +51,32 @@ def _load_modules():
     return discovery, coordinator
 
 
+def test_udp_discovery_only_accepts_matching_device_id() -> None:
+    """The APK discovery reply must not redirect an entry to another device."""
+    _load_modules()
+    api = importlib.import_module("cozylife_local.cozylife_api")
+    found: list[str] = []
+
+    async def record(ip_address: str) -> None:
+        found.append(ip_address)
+
+    async def exercise() -> None:
+        protocol = api._CozyLifeDiscoveryProtocol("expected-did", record)
+        protocol.datagram_received(
+            b'{"msg":{"did":"another-device","ip":"10.0.0.9"}}\r\n',
+            ("10.0.0.9", 6095),
+        )
+        await asyncio.sleep(0)
+        protocol.datagram_received(
+            b'{"msg":{"did":"expected-did","ip":"10.0.0.42"}}\r\n',
+            ("10.0.0.42", 6095),
+        )
+        await asyncio.sleep(0)
+
+    asyncio.run(exercise())
+    assert found == ["10.0.0.42"]
+
+
 def _load_number_module():
     """Load the number platform against the focused Home Assistant stubs."""
     _load_modules()

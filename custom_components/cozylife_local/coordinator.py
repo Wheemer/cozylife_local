@@ -18,7 +18,7 @@ from .const import (
     SENSOR_HUMIDITY,
     SENSOR_TEMPERATURE,
 )
-from .cozylife_api import CozyLifeDevice
+from .cozylife_api import CozyLifeDevice, CozyLifeUdpDiscovery
 from .discovery import classify_device
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,6 +26,8 @@ _UPDATE_LOGGER = logging.getLogger(f"{__name__}.updates")
 _UPDATE_LOGGER.setLevel(logging.INFO)
 
 UPDATE_INTERVAL = timedelta(seconds=30)
+SENSOR_DISCOVERY_INTERVAL_SECONDS = 0.25
+DEVICE_DISCOVERY_INTERVAL_SECONDS = 30.0
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
@@ -91,11 +93,38 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=entry,
         )
         self.device = device
+        self._udp_discovery: CozyLifeUdpDiscovery | None = None
         if self._uses_sensor_polling:
             # The Android client uses a one-second local TCP connect bound.
             self.device.set_timeout(1.0)
             self.device.set_message_listener(self._async_handle_device_message)
         self._entry = entry
+
+    async def async_start_discovery(self) -> None:
+        """Start local UDP address discovery after cached device info loads."""
+        if not self.device.device_id or self._udp_discovery:
+            return
+        interval = (
+            SENSOR_DISCOVERY_INTERVAL_SECONDS
+            if self._uses_sensor_polling
+            else DEVICE_DISCOVERY_INTERVAL_SECONDS
+        )
+        self._udp_discovery = CozyLifeUdpDiscovery(
+            self.device.device_id,
+            self._async_handle_discovered_address,
+            interval,
+        )
+        await self._udp_discovery.async_start()
+
+    async def _async_handle_discovered_address(self, ip_address: str) -> None:
+        """Use an APK discovery reply to refresh this entry's local address."""
+        moved = await self.device.async_update_ip_address(ip_address)
+        if moved:
+            self.hass.config_entries.async_update_entry(
+                self._entry,
+                data={**self._entry.data, "ip_address": ip_address},
+            )
+        await self.async_request_refresh()
 
     @property
     def is_sensor(self) -> bool:
@@ -103,6 +132,9 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_close(self) -> None:
         """Release the device reader owned by this config entry."""
+        if self._udp_discovery:
+            await self._udp_discovery.async_stop()
+            self._udp_discovery = None
         await self.device.async_close()
 
     async def _async_handle_device_message(self, frame: dict[str, Any]) -> None:

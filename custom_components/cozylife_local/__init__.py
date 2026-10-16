@@ -73,6 +73,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Create a coordinator for this device
     coordinator = CozyLifeCoordinator(hass, device, entry)
+    await coordinator.async_start_discovery()
 
     if coordinator.is_sensor:
         # Do not block setup while an intermittently reachable sensor is unavailable.
