@@ -105,6 +105,7 @@ class CozyLifeDevice:
         ip_address = self._discovery_ip(payload, self._device_id)
         if ip_address is None:
             return
+        _LOGGER.debug("CozyLife UDP discovery confirmed %s at %s", self._device_id, ip_address)
         if ip_address != self._ip_address:
             _LOGGER.info(
                 "CozyLife UDP discovery updated %s from %s to %s",
