@@ -33,9 +33,13 @@ _UPDATE_LOGGER.setLevel(logging.INFO)
 
 UPDATE_INTERVAL = timedelta(seconds=30)
 SENSOR_WAKE_WINDOW_LEAD = 10
-SENSOR_CATCH_POLL_INTERVAL = 1
-# CozyLife APK Config.TCP_GLOAL_CONNECT_TIMEOUT is 1000 ms.
-SENSOR_CATCH_REQUEST_TIMEOUT = 1.0
+SENSOR_CATCH_POLL_INTERVAL = 0.25
+# A temperature/humidity sensor only exposes its TCP listener briefly. Do not
+# let an unanswered connect consume the next probe opportunity: run a fresh
+# one-shot request four times per second. The APK's 1000 ms setting is its
+# upper connect limit, not a reason for the integration to wait a second
+# between probes.
+SENSOR_CATCH_REQUEST_TIMEOUT = 0.20
 SENSOR_CATCH_TIMEOUT = 120
 SENSOR_WAKE_SAMPLE_SECONDS = 4
 SENSOR_WAKE_SAMPLE_DELAY = 0.15
@@ -190,9 +194,17 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self._uses_sensor_polling
 
     def _schedule_next_sensor_wake(self) -> None:
-        """Poll shortly before the sensor is expected to wake again."""
+        """Keep probing a sleeping sensor with fresh, short local requests."""
         if not self._uses_sensor_polling:
             return
+        # A DPID 14 value is a device reporting preference, not a reliable
+        # clock that Home Assistant can use to predict a sub-second listener
+        # window. Never stop probing based on that value: doing so is how a
+        # successful reading was followed by a long stale period.
+        self.update_interval = timedelta(seconds=SENSOR_CATCH_POLL_INTERVAL)
+        self._current_sensor_response_at = None
+        return
+
 
         now = dt_util.utcnow()
         response_at = self._current_sensor_response_at or now
