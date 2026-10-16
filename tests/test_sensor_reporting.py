@@ -512,55 +512,6 @@ def test_door_magnet_contact_and_battery_dpids_match_the_apk() -> None:
     assert binary_sensor._coerce_binary_state(0) is False
 
 
-def test_sensor_reporting_interval_preserves_the_apk_configuration_bundle() -> None:
-    """The sole sensor control writes DPID 14 without losing panel settings."""
-    number = _load_number_module()
-
-    class Device:
-        device_id = "device"
-        device_model_name = "Temperature Sensor"
-        pid = "Z4tRml"
-        ip_address = "192.0.2.1"
-        payload = None
-
-        async def async_set_state(self, payload):
-            self.payload = payload
-            return True
-
-    device = Device()
-    coordinator = types.SimpleNamespace(
-        device=device,
-        data={
-            "26": 1,
-            "14": 3600,
-            "25": 25,
-            "24": 10,
-            "20": 300,
-            "21": 200,
-            "22": 100,
-            "23": 10,
-        },
-        async_set_updated_data=lambda data: setattr(coordinator, "data", data),
-        _effective_report_interval=None,
-        _schedule_next_sensor_wake=lambda: None,
-    )
-    entity = number.CozyLifeSensorReportIntervalNumber(coordinator)
-
-    assert entity.native_value == 60
-    asyncio.run(entity.async_set_native_value(30))
-    assert device.payload == {
-        "26": 1,
-        "14": 1800,
-        "25": 25,
-        "24": 10,
-        "20": 300,
-        "21": 200,
-        "22": 100,
-        "23": 10,
-    }
-    assert coordinator.data["14"] == 1800
-    assert coordinator._effective_report_interval == 1800
-
 
 def test_sensor_without_reported_interval_does_not_use_catalog_cadence() -> None:
     """A response without DPID 14 keeps catch polling, regardless of its PID."""

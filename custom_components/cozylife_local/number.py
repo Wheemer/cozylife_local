@@ -15,7 +15,6 @@ from .const import (
     LIGHT_SENSITIVITY,
     LIGHT_SPEED,
     PLUG_COUNTDOWN,
-    SENSOR_REPORT_INTERVAL_DPID,
 )
 from .coordinator import CozyLifeCoordinator
 from .discovery import dreamcolor_led_count_bounds
@@ -55,88 +54,10 @@ async def async_setup_entry(
             async_add_entities(light_numbers)
             return
 
-    if (
-        coordinator.classification.is_environment_sensor
-        and SENSOR_REPORT_INTERVAL_DPID in dpids
-    ):
-        async_add_entities([CozyLifeSensorReportIntervalNumber(coordinator)])
-        return
-
     _LOGGER.debug(
         "Device %s has no supported number DPIDs, skipping number setup.",
         coordinator.device.ip_address,
     )
-
-
-# The APK writes these together when its reporting interval changes. Preserve
-# any values the awake sensor supplied without exposing them as HA controls.
-SENSOR_REPORT_INTERVAL_PRESERVED_DPIDS = (
-    "26",
-    "14",
-    "25",
-    "24",
-    "20",
-    "21",
-    "22",
-    "23",
-)
-
-
-class CozyLifeSensorReportIntervalNumber(
-    CoordinatorEntity[CozyLifeCoordinator],
-    NumberEntity,
-):
-    """The sensor's APK-confirmed reporting interval, in minutes."""
-
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_mode = NumberMode.BOX
-    _attr_native_min_value = 30
-    _attr_native_max_value = 480
-    _attr_native_step = 30
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
-
-    def __init__(self, coordinator: CozyLifeCoordinator) -> None:
-        super().__init__(coordinator)
-        self._attr_name = f"{coordinator.device.device_model_name} Reporting Interval"
-        self._attr_unique_id = f"{coordinator.device.device_id}_reporting_interval"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, self.coordinator.device.device_id)},
-            name=self.coordinator.device.device_model_name,
-            manufacturer="CozyLife",
-            model=self.coordinator.device.pid,
-        )
-
-    @property
-    def native_value(self) -> float | None:
-        try:
-            return int(self.coordinator.data[SENSOR_REPORT_INTERVAL_DPID]) / 60
-        except (KeyError, TypeError, ValueError):
-            return None
-
-    async def async_set_native_value(self, value: float) -> None:
-        raw_value = round(value * 60)
-        payload = {
-            dpid: self.coordinator.data[dpid]
-            for dpid in SENSOR_REPORT_INTERVAL_PRESERVED_DPIDS
-            if dpid in self.coordinator.data
-        }
-        payload[SENSOR_REPORT_INTERVAL_DPID] = raw_value
-        if not await self.coordinator.device.async_set_state(payload):
-            _LOGGER.warning(
-                "Failed to set reporting interval for sleeping CozyLife sensor %s",
-                self.coordinator.device.ip_address,
-            )
-            return
-
-        updated = dict(self.coordinator.data)
-        updated[SENSOR_REPORT_INTERVAL_DPID] = raw_value
-        self.coordinator.async_set_updated_data(updated)
-        self.coordinator._effective_report_interval = raw_value
-        self.coordinator._observed_wake_intervals = []
-        self.coordinator._schedule_next_sensor_wake()
 
 
 @dataclass(frozen=True)
