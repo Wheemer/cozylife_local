@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import timedelta
 from typing import Any
@@ -28,6 +29,7 @@ _UPDATE_LOGGER.setLevel(logging.INFO)
 UPDATE_INTERVAL = timedelta(seconds=30)
 SENSOR_DISCOVERY_INTERVAL_SECONDS = 10.0
 SENSOR_CONNECT_TIMEOUT_SECONDS = 1.0
+SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.25
 DEVICE_DISCOVERY_INTERVAL_SECONDS = 30.0
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
@@ -99,11 +101,12 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.device = device
         self._udp_discovery: CozyLifeUdpDiscovery | None = None
+        self._sensor_probe_task: asyncio.Task[None] | None = None
         if self._uses_sensor_polling:
             # The APK's TCP_GLOAL_CONNECT_TIMEOUT is 1000 ms.  This applies
             # only after a matching UDP reply has made a local status write
             # eligible; it is not a polling interval.
-            self.device.set_timeout(SENSOR_CONNECT_TIMEOUT_SECONDS)
+            self.device.set_timeout(SENSOR_WAKE_PROBE_INTERVAL_SECONDS)
             self.device.set_message_listener(self._async_handle_device_message)
         self._entry = entry
 
@@ -122,6 +125,16 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             interval,
         )
         await self._udp_discovery.async_start()
+        if self._uses_sensor_polling:
+            self._sensor_probe_task = self.hass.async_create_task(
+                self._async_probe_sensor_wake_window()
+            )
+
+    async def _async_probe_sensor_wake_window(self) -> None:
+        """Keep local status requests present while a sensor opens TCP."""
+        while True:
+            await self.device.async_send_status()
+            await asyncio.sleep(SENSOR_WAKE_PROBE_INTERVAL_SECONDS)
 
     async def _async_handle_discovered_address(self, ip_address: str) -> None:
         """Use an APK discovery reply to refresh this entry's local address."""
@@ -149,6 +162,13 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._udp_discovery:
             await self._udp_discovery.async_stop()
             self._udp_discovery = None
+        if self._sensor_probe_task:
+            self._sensor_probe_task.cancel()
+            try:
+                await self._sensor_probe_task
+            except asyncio.CancelledError:
+                pass
+            self._sensor_probe_task = None
         await self.device.async_close()
 
     async def _async_handle_device_message(self, frame: dict[str, Any]) -> None:
