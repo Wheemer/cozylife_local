@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -53,6 +54,37 @@ def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None
             assert reports == [
                 {"cmd": 2, "sn": "device-event", "msg": {"data": {"4": 48, "8": 291}}}
             ]
+        finally:
+            await device.async_close()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
+def test_status_socket_is_recycled_on_the_apk_daemon_cadence() -> None:
+    """A sleeping sensor gets a fresh TCP connection after ten seconds."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        connections = 0
+
+        async def handler(reader, writer) -> None:
+            nonlocal connections
+            connections += 1
+            while await reader.readline():
+                writer.write(b'{"cmd":2,"sn":"report","msg":{"data":{"4":50}}}\r\n')
+                await writer.drain()
+
+        server = await asyncio.start_server(handler, "127.0.0.1", 5555)
+        device = CozyLifeDevice("127.0.0.1", timeout=1.0)
+        try:
+            assert await device.async_send_status()
+            await asyncio.sleep(0.05)
+            device._connected_at = time.monotonic() - 10.1
+            assert await device.async_send_status()
+            await asyncio.sleep(0.05)
+            assert connections == 2
         finally:
             await device.async_close()
             server.close()

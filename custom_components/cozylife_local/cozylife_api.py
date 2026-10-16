@@ -14,6 +14,7 @@ _RAW_LOGGER.setLevel(logging.INFO)
 
 COZYLIFE_PORT = 5555
 COZYLIFE_UDP_DISCOVERY_PORT = 6095
+SENSOR_SOCKET_RECYCLE_SECONDS = 10.0
 CMD_INFO = 0
 CMD_QUERY = 2
 CMD_SET = 3
@@ -150,6 +151,7 @@ class CozyLifeDevice:
         self._message_listener: Optional[Callable[[Dict[str, Any]], Any]] = None
         self._reader_task: Optional[asyncio.Task[None]] = None
         self._connection_lock: Optional[asyncio.Lock] = None
+        self._connected_at: Optional[float] = None
 
     @property
     def ip_address(self) -> str:
@@ -246,6 +248,7 @@ class CozyLifeDevice:
         writer = self._writer
         self._reader = None
         self._writer = None
+        self._connected_at = None
         if writer:
             try:
                 writer.close()
@@ -426,7 +429,28 @@ class CozyLifeDevice:
         Cozy Life's ``WifiTcpMessage.expectAccept`` is false.  Its reader,
         rather than the writer, receives the asynchronous sensor report.
         """
-        # A waking battery sensor can accept a connection only briefly.  Do
+        # The APK's shared TCP pool is cleaned by its 10-second app daemon.
+        # Recycle the local sensor socket on the same cadence so a later wake
+        # window gets a new TCP connection rather than writes to a stale one.
+        if (
+            self._writer
+            and not self._writer.is_closing()
+            and self._connected_at is not None
+            and time.monotonic() - self._connected_at >= SENSOR_SOCKET_RECYCLE_SECONDS
+        ):
+            if self._connection_lock is None:
+                self._connection_lock = asyncio.Lock()
+            async with self._connection_lock:
+                if (
+                    self._writer
+                    and not self._writer.is_closing()
+                    and self._connected_at is not None
+                    and time.monotonic() - self._connected_at
+                    >= SENSOR_SOCKET_RECYCLE_SECONDS
+                ):
+                    self._disconnect()
+
+        # A waking battery sensor can accept a connection only briefly. Do
         # not serialize a new TCP connect behind an earlier one that is still
         # waiting for its full APK-derived deadline; install whichever probe
         # reaches the device first, then retain that socket for the reader.
@@ -451,6 +475,7 @@ class CozyLifeDevice:
                 else:
                     self._reader = reader
                     self._writer = writer
+                    self._connected_at = time.monotonic()
                     self._reader_task = asyncio.create_task(
                         self._read_frames(reader, writer),
                         name=f"cozylife-reader-{self._ip_address}",
