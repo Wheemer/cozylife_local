@@ -6,7 +6,6 @@ import asyncio
 import importlib
 import sys
 import types
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 COMPONENT_DIR = Path(__file__).parents[1] / "custom_components" / "cozylife_local"
@@ -513,57 +512,17 @@ def test_door_magnet_contact_and_battery_dpids_match_the_apk() -> None:
 
 
 
-def test_sensor_without_reported_interval_does_not_use_catalog_cadence() -> None:
-    """A response without DPID 14 keeps catch polling, regardless of its PID."""
+def test_sensor_state_request_does_not_query_or_schedule_dpid_14() -> None:
+    """Sensor refresh uses the live stream, not a reporting-interval clock."""
     _, coordinator_module = _load_modules()
 
     class Device:
         device_id = "device"
         dpid = ("4", "8", "14")
         ip_address = "192.0.2.1"
-
-
-        async def async_discover_local(self):
-            return True
-        async def async_get_state(self, _dpids=None):
-            return {"4": 48, "8": 215}
-
-    instance = object.__new__(coordinator_module.CozyLifeCoordinator)
-    instance.device = Device()
-    instance.classification = types.SimpleNamespace(
-        is_environment_sensor=True,
-        supports_switch_entities=False,
-        is_light=False,
-    )
-    instance.data = {}
-    instance._uses_sensor_polling = True
-    instance._current_sensor_response_at = None
-    # A previous implementation populated this from model metadata. A response
-    # that omits DPID 14 must clear it rather than reusing that assumption.
-    instance._effective_report_interval = 3600
-    instance._observed_wake_intervals = []
-
-    assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215}
-    assert instance._effective_report_interval is None
-    assert instance.update_interval == timedelta(
-        seconds=coordinator_module.SENSOR_CATCH_POLL_INTERVAL
-    )
-
-def test_sensor_queries_its_report_interval_when_status_omits_it() -> None:
-    """DPID 14 is queried directly while the sensor is awake."""
-    _, coordinator_module = _load_modules()
-
-    class Device:
-        device_id = "device"
-        dpid = ("4", "8", "14")
-        ip_address = "192.0.2.1"
-
-        async def async_discover_local(self):
-            return True
 
         async def async_get_state(self, dpids=None):
-            if dpids == ["14"]:
-                return {"14": 1800}
+            assert dpids is None
             return {"4": 48, "8": 215}
 
     instance = object.__new__(coordinator_module.CozyLifeCoordinator)
@@ -574,70 +533,55 @@ def test_sensor_queries_its_report_interval_when_status_omits_it() -> None:
         is_light=False,
     )
     instance.data = {}
-    instance._uses_sensor_polling = False
-    instance._current_sensor_response_at = None
-    instance._effective_report_interval = None
-    instance._observed_wake_intervals = []
-    instance._schedule_next_sensor_wake = lambda: None
+    instance._uses_sensor_polling = True
 
-    assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215, "14": 1800}
-    assert instance._effective_report_interval == 1800
+    assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215}
+    assert not hasattr(instance, "update_interval")
 
 
-def test_dpid_14_is_vendor_raw_seconds() -> None:
-    _, coordinator = _load_modules()
-
-    # The bundled CozyLife panel reads DPID 14 in seconds and writes choices as
-    # 1800..28800. Keep declared longer sensor cadences intact too.
-    assert coordinator._decode_sensor_report_interval(0) is None
-    assert coordinator._decode_sensor_report_interval(600) == 600
-    assert coordinator._decode_sensor_report_interval(1800) == 1800
-    assert coordinator._decode_sensor_report_interval(3600) == 3600
-    assert coordinator._decode_sensor_report_interval(28800) == 28800
-    assert coordinator._decode_sensor_report_interval(86400) == 86400
-
-
-def test_sensor_wake_schedule_learns_the_observed_period() -> None:
-    """A stable sensor clock drift must not make every later wake window miss."""
-    _, coordinator = _load_modules()
-
-    # Upstream issue #9 records this model waking 3518--3524 seconds after a
-    # DPID 14 value of 3600. Median keeps an occasional late/missed sample out.
-    assert coordinator._scheduled_sensor_wake_interval(
-        3600, [3521, 3522, 3518, 3524]
-    ) == 3522
-    assert coordinator._scheduled_sensor_wake_interval(3600, [7200]) == 3600
-
-def test_placeholder_sensor_response_is_resampled_without_legacy_option(
-    monkeypatch,
-) -> None:
-    """A placeholder response must enter wake sampling without old options."""
+def test_persistent_sensor_frame_updates_coordinator() -> None:
+    """A complete device frame updates Home Assistant without a new query."""
     _, coordinator_module = _load_modules()
 
-    class Device:
-        ip_address = "192.0.2.1"
-
-        def __init__(self) -> None:
-            self.responses = [{"4": 0, "8": 0}, {"4": 48, "8": 215}]
-
-        async def async_get_state(self):
-            return self.responses.pop(0)
-
-    async def no_wait(_delay: float) -> None:
-        return None
-
     instance = object.__new__(coordinator_module.CozyLifeCoordinator)
-    instance.device = Device()
+    instance.device = types.SimpleNamespace(ip_address="192.0.2.1")
     instance.classification = types.SimpleNamespace(is_environment_sensor=True)
+    instance.data = {"4": 48, "8": 215, "9": 1000}
     instance._uses_sensor_polling = True
-    instance._current_sensor_response_at = None
-    monkeypatch.setattr(coordinator_module.asyncio, "sleep", no_wait)
+    received = []
+    instance.async_set_updated_data = received.append
 
-    assert asyncio.run(instance._async_get_environment_state()) == {"4": 48, "8": 215}
+    asyncio.run(
+        instance._async_handle_device_message(
+            {"sn": "report", "msg": {"data": {"4": 49, "8": 216}}}
+        )
+    )
+
+    assert received == [{"4": 49, "8": 216, "9": 1000}]
+
+
+def test_placeholder_sensor_response_is_not_published() -> None:
+    """The stream ignores zero placeholders instead of recording false spikes."""
+    _, coordinator_module = _load_modules()
+    instance = object.__new__(coordinator_module.CozyLifeCoordinator)
+    instance.device = types.SimpleNamespace(ip_address="192.0.2.1")
+    instance.classification = types.SimpleNamespace(is_environment_sensor=True)
+    instance.data = {"4": 48, "8": 215}
+    instance._uses_sensor_polling = True
+    received = []
+    instance.async_set_updated_data = received.append
+
+    asyncio.run(
+        instance._async_handle_device_message(
+            {"sn": "placeholder", "msg": {"data": {"4": 0, "8": 0}}}
+        )
+    )
+
+    assert received == []
 
 
 def test_connect_timeout_is_a_normal_no_response() -> None:
-    """A sleeping-device connection timeout must not escape the API client."""
+    """A local connection timeout must not escape the API client."""
     _load_modules()
     api = importlib.import_module("cozylife_local.cozylife_api")
 
@@ -650,50 +594,6 @@ def test_connect_timeout_is_a_normal_no_response() -> None:
     instance._disconnect = lambda: None
 
     assert asyncio.run(instance._send_receive(2, {"attr": [1]})) is None
-
-
-def test_timeout_starts_sensor_catch_polling_and_retains_data(monkeypatch) -> None:
-    """A missed wake must retry quickly instead of waiting another cycle."""
-    _, coordinator_module = _load_modules()
-
-    class Device:
-        ip_address = "192.0.2.1"
-        device_id = "device"
-        dpid = ("4", "8", "9", "14")
-
-        async def async_get_state(self):
-            return None
-
-        async def async_discover_local(self, *, force=False):
-            return True
-
-    instance = object.__new__(coordinator_module.CozyLifeCoordinator)
-    instance.device = Device()
-    instance.classification = types.SimpleNamespace(
-        is_environment_sensor=True,
-        supports_switch_entities=False,
-        is_light=False,
-    )
-    instance.data = {"4": 48, "8": 215}
-    instance._uses_sensor_polling = True
-    instance._current_sensor_response_at = None
-    instance._catch_started_at = None
-    instance._last_sensor_response_at = datetime(2026, 10, 14, tzinfo=timezone.utc)
-    instance._effective_report_interval = 3600
-    instance._observed_wake_intervals = []
-    instance._first_success_wait_logged = False
-    instance._missed_expected_wake_logged = False
-    instance._fallback_logged = False
-    monkeypatch.setattr(
-        coordinator_module.dt_util,
-        "utcnow",
-        lambda: datetime(2026, 10, 14, tzinfo=timezone.utc),
-    )
-
-    assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215}
-    assert instance.update_interval == timedelta(
-        seconds=coordinator_module.SENSOR_CATCH_POLL_INTERVAL
-    )
 
 
 def test_direct_home_appliances_with_dpid_1_get_one_power_switch() -> None:

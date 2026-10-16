@@ -78,6 +78,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Do not block setup while an intermittently reachable sensor is unavailable.
         # Seed with empty data so entities update on the first successful poll.
         coordinator.async_set_updated_data({})
+        # Match the app's device-activation request: open the persistent local
+        # reader immediately, then let incoming frames drive entity updates.
+        hass.async_create_task(coordinator.async_request_refresh())
     else:
         await coordinator.async_config_entry_first_refresh()
 
@@ -102,7 +105,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        coordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        await coordinator.async_close()
         active_entries = [
             key for key in hass.data[DOMAIN] if key != SCHEDULE_MANAGER
         ]
