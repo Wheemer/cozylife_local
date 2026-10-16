@@ -426,8 +426,36 @@ class CozyLifeDevice:
         Cozy Life's ``WifiTcpMessage.expectAccept`` is false.  Its reader,
         rather than the writer, receives the asynchronous sensor report.
         """
+        # A waking battery sensor can accept a connection only briefly.  Do
+        # not serialize a new TCP connect behind an earlier one that is still
+        # waiting for its full APK-derived deadline; install whichever probe
+        # reaches the device first, then retain that socket for the reader.
+        if not self._writer or self._writer.is_closing():
+            try:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(self._ip_address, COZYLIFE_PORT),
+                    timeout=self._timeout,
+                )
+            except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+                return False
+
+            if self._connection_lock is None:
+                self._connection_lock = asyncio.Lock()
+            async with self._connection_lock:
+                if self._writer and not self._writer.is_closing():
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except OSError:
+                        pass
+                else:
+                    self._reader = reader
+                    self._writer = writer
+                    self._reader_task = asyncio.create_task(
+                        self._read_frames(reader, writer),
+                        name=f"cozylife-reader-{self._ip_address}",
+                    )
         try:
-            await self._connect()
             writer = self._writer
             if writer is None:
                 return False
