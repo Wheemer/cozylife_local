@@ -571,6 +571,9 @@ def test_sensor_without_reported_interval_does_not_use_catalog_cadence() -> None
         dpid = ("4", "8", "14")
         ip_address = "192.0.2.1"
 
+
+        async def async_discover_local(self):
+            return True
         async def async_get_state(self, _dpids=None):
             return {"4": 48, "8": 215}
 
@@ -601,6 +604,9 @@ def test_sensor_queries_its_report_interval_when_status_omits_it() -> None:
         device_id = "device"
         dpid = ("4", "8", "14")
         ip_address = "192.0.2.1"
+
+        async def async_discover_local(self):
+            return True
 
         async def async_get_state(self, dpids=None):
             if dpids == ["14"]:
@@ -703,6 +709,9 @@ def test_timeout_starts_sensor_catch_polling_and_retains_data(monkeypatch) -> No
 
         async def async_get_state(self):
             return None
+
+        async def async_discover_local(self, *, force=False):
+            return True
 
     instance = object.__new__(coordinator_module.CozyLifeCoordinator)
     instance.device = Device()

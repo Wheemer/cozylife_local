@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import time
+import socket
 from typing import Any, Dict, List, Optional
 
 from .discovery import get_model_info
@@ -11,6 +12,13 @@ _RAW_LOGGER = logging.getLogger(f"{__name__}.raw")
 _RAW_LOGGER.setLevel(logging.INFO)
 
 COZYLIFE_PORT = 5555
+COZYLIFE_DISCOVERY_PORT = 6095
+COZYLIFE_DISCOVERY_ADDRESS = "255.255.255.255"
+# WifiUdpServer sends once from startSearchDevices(), then sixteen broadcasts.
+COZYLIFE_DISCOVERY_BROADCASTS = 17
+COZYLIFE_DISCOVERY_WINDOW = 5.0
+COZYLIFE_DISCOVERY_CACHE_SECONDS = 15.0
+
 CMD_INFO = 0
 CMD_QUERY = 2
 CMD_SET = 3
@@ -38,7 +46,9 @@ class CozyLifeDevice:
         self._device_id: Optional[str] = None
         self._pid: Optional[str] = None
         self._device_model_name: Optional[str] = None
+        self._last_discovery_attempt = 0.0
         self._dpid: Optional[List[str]] = None
+        self._discovered_at = 0.0
         self._device_type_code: Optional[str] = None
 
     @property
@@ -48,7 +58,7 @@ class CozyLifeDevice:
     @property
     def device_id(self) -> Optional[str]:
         return self._device_id
-    
+
     @property
     def pid(self) -> Optional[str]:
         return self._pid
@@ -75,6 +85,66 @@ class CozyLifeDevice:
         self._device_model_name = (
             model_info.model_name if model_info else f"CozyLife Device ({pid})"
         )
+
+    @staticmethod
+    def _discovery_ip(payload: Dict[str, Any], device_id: str) -> Optional[str]:
+        """Read the DID/IP from the APK's UDP ``msg`` envelope."""
+        message = payload.get("msg")
+        if not isinstance(message, dict) or message.get("did") != device_id:
+            return None
+        advertised_ip = message.get("ip")
+        return advertised_ip if isinstance(advertised_ip, str) and advertised_ip else None
+
+    async def async_discover_local(self, *, force: bool = False) -> bool:
+        """Discover this configured device with the APK's UDP protocol."""
+        if not self._device_id:
+            return False
+        now = time.monotonic()
+        if not force and now - self._discovered_at < COZYLIFE_DISCOVERY_CACHE_SECONDS:
+            return True
+        if now - self._last_discovery_attempt < COZYLIFE_DISCOVERY_CACHE_SECONDS:
+            return False
+        self._last_discovery_attempt = now
+
+        loop = asyncio.get_running_loop()
+        reply: asyncio.Future[Optional[str]] = loop.create_future()
+        device_id = self._device_id
+
+        class DiscoveryProtocol(asyncio.DatagramProtocol):
+            def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+                if reply.done():
+                    return
+                try:
+                    payload = json.loads(data.decode("utf-8").strip())
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    return
+                ip_address = CozyLifeDevice._discovery_ip(payload, device_id)
+                if ip_address is not None:
+                    reply.set_result(ip_address)
+
+        transport = None
+        try:
+            transport, _ = await loop.create_datagram_endpoint(
+                DiscoveryProtocol, family=socket.AF_INET, allow_broadcast=True
+            )
+            message = (
+                json.dumps(self._create_message(CMD_INFO, {}), separators=(",", ":"))
+                + "\r\n"
+            ).encode("utf-8")
+            for _ in range(COZYLIFE_DISCOVERY_BROADCASTS):
+                transport.sendto(message, (COZYLIFE_DISCOVERY_ADDRESS, COZYLIFE_DISCOVERY_PORT))
+            ip_address = await asyncio.wait_for(reply, timeout=COZYLIFE_DISCOVERY_WINDOW)
+        except (asyncio.TimeoutError, OSError):
+            return False
+        finally:
+            if transport is not None:
+                transport.close()
+
+        if ip_address != self._ip_address:
+            _LOGGER.info("CozyLife UDP discovery updated %s from %s to %s", device_id, self._ip_address, ip_address)
+            self._ip_address = ip_address
+        self._discovered_at = time.monotonic()
+        return True
 
     async def _connect(self):
         """Establishes an asynchronous TCP connection to the device."""
@@ -109,7 +179,7 @@ class CozyLifeDevice:
             message = self._create_message(cmd, payload)
             sent_sn = message.get('sn')
             encoded_message = (json.dumps(message, separators=(',', ':')) + "\r\n").encode('utf8')
-            
+
             _RAW_LOGGER.debug(f"Sending to {self._ip_address}: {encoded_message!r}")
             self._writer.write(encoded_message)
             await self._writer.drain()
@@ -120,9 +190,9 @@ class CozyLifeDevice:
                     remaining_time = end_time - time.monotonic()
                     if remaining_time <= 0:
                         raise asyncio.TimeoutError
-                    
+
                     response_data = await asyncio.wait_for(self._reader.readline(), timeout=remaining_time)
-                    
+
                     if not response_data:
                         _LOGGER.debug(f"Connection closed by {self._ip_address} while waiting for response.")
                         self._disconnect()
@@ -188,7 +258,7 @@ class CozyLifeDevice:
         if not info_msg or not all(k in info_msg for k in ['did', 'pid', 'dtp']):
             _LOGGER.warning(f"Device info query failed or missing critical fields: {info_msg}")
             return False
-        
+
         self._device_id = info_msg['did']
         self._pid = info_msg['pid']
         self._device_type_code = info_msg['dtp']

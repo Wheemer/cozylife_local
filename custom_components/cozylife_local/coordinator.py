@@ -162,6 +162,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=entry,
         )
         self.device = device
+        self._entry = entry
         self._effective_report_interval: int | None = None
         self._observed_wake_intervals: list[float] = []
         self._missed_expected_wake_logged = False
@@ -352,6 +353,12 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_get_environment_state(self) -> dict[str, Any]:
         """Sample a waking environment sensor until real measurements appear."""
         state_data = await self.device.async_get_state()
+        if state_data is None and await self.device.async_discover_local(force=True):
+            _LOGGER.debug(
+                "CozyLife UDP discovery recovered %s; retrying local state read",
+                self.device.ip_address,
+            )
+            state_data = await self.device.async_get_state()
         if state_data is None:
             raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
 
@@ -482,6 +489,15 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
             state_data = await self._async_get_environment_state()
+            if (
+                getattr(self, "_entry", None)
+                and self._entry.data.get("ip_address") != self.device.ip_address
+            ):
+                self.hass.config_entries.async_update_entry(
+                    self._entry,
+                    data={**self._entry.data, "ip_address": self.device.ip_address},
+                )
+
             state_data = await self._async_add_hidden_switch_state(state_data)
             state_data = await self._async_add_hidden_light_state(state_data)
             state_data = await self._async_add_hidden_sensor_state(state_data)

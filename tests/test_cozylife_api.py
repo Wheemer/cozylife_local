@@ -47,3 +47,21 @@ def test_explicit_dpid_query_is_preserved() -> None:
 
     assert result == {"14": 3600}
     device._send_receive.assert_awaited_once_with(api.CMD_QUERY, {"attr": [14]})
+
+def test_discovery_uses_apk_msg_envelope_and_matching_did() -> None:
+    payload = {
+        "cmd": 0,
+        "msg": {"did": "expected-device", "ip": "192.0.2.44", "pid": "Z4tRml"},
+    }
+
+    assert api.CozyLifeDevice._discovery_ip(payload, "expected-device") == "192.0.2.44"
+    assert api.CozyLifeDevice._discovery_ip(payload, "other-device") is None
+
+
+def test_discovery_rejects_missing_or_top_level_ip() -> None:
+    assert api.CozyLifeDevice._discovery_ip(
+        {"msg": {"did": "expected-device"}}, "expected-device"
+    ) is None
+    assert api.CozyLifeDevice._discovery_ip(
+        {"did": "expected-device", "ip": "192.0.2.44"}, "expected-device"
+    ) is None
