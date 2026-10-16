@@ -1,10 +1,10 @@
 import asyncio
 import logging
 from datetime import timedelta
-from typing import Any, Callable
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import EVENT_HOMEASSISTANT_STARTED, Event, HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -104,8 +104,6 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._udp_discovery: CozyLifeUdpDiscovery | None = None
         self._sensor_probe_task: asyncio.Task[None] | None = None
         self._sensor_probe_requests: set[asyncio.Task[bool]] = set()
-        self._sensor_start_unsub: Callable[[], None] | None = None
-        self._sensor_probes_started = False
         if self._uses_sensor_polling:
             # The APK's TCP_GLOAL_CONNECT_TIMEOUT is 1000 ms.  Keep that
             # connection deadline independent from the probe cadence: a
@@ -131,35 +129,22 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         await self._udp_discovery.async_start()
         if self._uses_sensor_polling:
-            # Do not create pending TCP connection tasks during Home
-            # Assistant's bootstrap. A sleeping sensor can legitimately
-            # leave several 1-second connection attempts in flight; those
-            # tasks must never be inherited by the startup task tree.
-            if self.hass.is_running:
-                self._async_start_sensor_probes()
-            else:
-                self._sensor_start_unsub = self.hass.bus.async_listen_once(
-                    EVENT_HOMEASSISTANT_STARTED,
-                    self._async_start_sensor_probes,
-                )
-
-    @callback
-    def _async_start_sensor_probes(self, _event: Event | None = None) -> None:
-        """Start wake-window probing only after Home Assistant is running."""
-        self._sensor_start_unsub = None
-        if self._sensor_probe_task is not None:
-            return
-        self._sensor_probes_started = True
-        self._sensor_probe_task = self.hass.async_create_background_task(
-            self._async_probe_sensor_wake_window(),
-            "cozylife sensor wake-window probing",
-        )
+            # A sleeping sensor can legitimately leave several one-second
+            # connection attempts in flight. Keep those attempts entirely
+            # outside Home Assistant's startup task tree.
+            self._sensor_probe_task = self.hass.async_create_background_task(
+                self._async_probe_sensor_wake_window(),
+                "cozylife sensor wake-window probing",
+            )
 
     async def _async_probe_sensor_wake_window(self) -> None:
         """Keep local connection attempts present through a short wake window."""
         while True:
             if len(self._sensor_probe_requests) < SENSOR_WAKE_PROBE_CONCURRENCY:
-                request = self.hass.async_create_task(self.device.async_send_status())
+                request = self.hass.async_create_background_task(
+                    self.device.async_send_status(),
+                    "cozylife sensor status probe",
+                )
                 self._sensor_probe_requests.add(request)
                 request.add_done_callback(self._sensor_probe_requests.discard)
             await asyncio.sleep(SENSOR_WAKE_PROBE_INTERVAL_SECONDS)
@@ -177,8 +162,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # a matching UDP discovery reply has populated its online cache.
             # It does not synchronously await that frame; the socket reader
             # publishes the resulting device report.
-            if self._sensor_probes_started:
-                await self.device.async_send_status()
+            await self.device.async_send_status()
             return
         await self.async_request_refresh()
 
@@ -188,9 +172,6 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_close(self) -> None:
         """Release the device reader owned by this config entry."""
-        if self._sensor_start_unsub:
-            self._sensor_start_unsub()
-            self._sensor_start_unsub = None
         if self._udp_discovery:
             await self._udp_discovery.async_stop()
             self._udp_discovery = None
