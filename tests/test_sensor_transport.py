@@ -62,8 +62,8 @@ def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None
     asyncio.run(exercise())
 
 
-def test_status_socket_is_recycled_on_the_apk_daemon_cadence() -> None:
-    """A sleeping sensor gets a fresh TCP connection after ten seconds."""
+def test_status_socket_is_recycled_on_the_configured_cadence() -> None:
+    """A sleeping sensor gets a fresh TCP connection after thirty seconds."""
     CozyLifeDevice = _load_api()
 
     async def exercise() -> None:
@@ -81,7 +81,7 @@ def test_status_socket_is_recycled_on_the_apk_daemon_cadence() -> None:
         try:
             assert await device.async_send_status()
             await asyncio.sleep(0.05)
-            device._connected_at = time.monotonic() - 10.1
+            device._connected_at = time.monotonic() - 30.1
             assert await device.async_send_status()
             await asyncio.sleep(0.05)
             assert connections == 2
