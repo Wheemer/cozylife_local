@@ -71,10 +71,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "dpids": device.dpid,
         })
 
-    # The APK keeps a UDP socket open and broadcasts discovery every ten seconds.
-    # Keep it independent of coordinator polling so a missed sensor read cannot
-    # stall the next local discovery window.
-    await device.async_start_discovery()
     # Create a coordinator for this device
     coordinator = CozyLifeCoordinator(hass, device, entry)
 
@@ -103,7 +99,6 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    await hass.data[DOMAIN][entry.entry_id].device.async_stop_discovery()
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:

@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import time
-import socket
 from typing import Any, Dict, List, Optional
 
 from .discovery import get_model_info
@@ -12,23 +11,10 @@ _RAW_LOGGER = logging.getLogger(f"{__name__}.raw")
 _RAW_LOGGER.setLevel(logging.INFO)
 
 COZYLIFE_PORT = 5555
-COZYLIFE_DISCOVERY_PORT = 6095
-COZYLIFE_DISCOVERY_ADDRESS = "255.255.255.255"
-# WifiUdpServer's AppDeamon checker calls startSearchDevices every ten seconds.
-COZYLIFE_DISCOVERY_INTERVAL = 10.0
-COZYLIFE_DISCOVERY_STARTUP_BROADCASTS = 17
-
 CMD_INFO = 0
 CMD_QUERY = 2
 CMD_SET = 3
 DPID_QUERY_ATTEMPTS = 3
-
-# CozyLife's own Android client uses CMD_QUERY with attr [0] for device
-# properties and attr [1] for the current device status. Keep the property
-# selector as the low-level default for discovery, but make normal state reads
-# explicitly request status below.
-QUERY_PROPERTIES = 0
-QUERY_STATUS = 1
 
 def _get_sn() -> str:
     """Generates a unique sequence number based on current timestamp."""
@@ -47,8 +33,6 @@ class CozyLifeDevice:
         self._device_model_name: Optional[str] = None
         self._dpid: Optional[List[str]] = None
         self._device_type_code: Optional[str] = None
-        self._discovery_transport: Optional[asyncio.DatagramTransport] = None
-        self._discovery_task: Optional[asyncio.Task[None]] = None
 
     @property
     def ip_address(self) -> str:
@@ -85,111 +69,8 @@ class CozyLifeDevice:
             model_info.model_name if model_info else f"CozyLife Device ({pid})"
         )
 
-    @staticmethod
-    def _discovery_ip(payload: Dict[str, Any], device_id: str) -> Optional[str]:
-        """Read the DID/IP from the APK's UDP ``msg`` envelope."""
-        message = payload.get("msg")
-        if not isinstance(message, dict) or message.get("did") != device_id:
-            return None
-        advertised_ip = message.get("ip")
-        return advertised_ip if isinstance(advertised_ip, str) and advertised_ip else None
-
-    def _handle_discovery_packet(self, data: bytes) -> None:
-        """Cache an APK-shaped reply received on the persistent UDP socket."""
-        if not self._device_id:
-            return
-        try:
-            payload = json.loads(data.decode("utf-8").strip())
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return
-        message = payload.get("msg")
-        if isinstance(message, dict):
-            _LOGGER.debug(
-                "CozyLife UDP discovery reply: did=%s ip=%s",
-                message.get("did"),
-                message.get("ip"),
-            )
-        ip_address = self._discovery_ip(payload, self._device_id)
-        if ip_address is None:
-            return
-        _LOGGER.debug("CozyLife UDP discovery confirmed %s at %s", self._device_id, ip_address)
-        if ip_address != self._ip_address:
-            _LOGGER.info(
-                "CozyLife UDP discovery updated %s from %s to %s",
-                self._device_id,
-                self._ip_address,
-                ip_address,
-            )
-            self._ip_address = ip_address
-
-    def _send_discovery_broadcast(self) -> None:
-        """Send WifiUdpServer.startSearchDevices' single UDP broadcast."""
-        if self._discovery_transport is None:
-            return
-        message = (
-            json.dumps(self._create_message(CMD_INFO, {}), separators=(",", ":"))
-            + "\r\n"
-        ).encode("utf-8")
-        self._discovery_transport.sendto(
-            message, (COZYLIFE_DISCOVERY_ADDRESS, COZYLIFE_DISCOVERY_PORT)
-        )
-
-    async def async_start_discovery(self) -> None:
-        """Run the APK's long-lived Wi-Fi UDP discovery checker."""
-        if not self._device_id or self._discovery_task is not None:
-            return
-
-        device = self
-
-        class DiscoveryProtocol(asyncio.DatagramProtocol):
-            def datagram_received(self, data: bytes, _addr: tuple[str, int]) -> None:
-                device._handle_discovery_packet(data)
-
-        try:
-            transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
-                DiscoveryProtocol, family=socket.AF_INET, allow_broadcast=True
-            )
-        except OSError as err:
-            _LOGGER.debug("Unable to start CozyLife UDP discovery: %s", err)
-            return
-
-        self._discovery_transport = transport
-
-        async def discovery_loop() -> None:
-            try:
-                # On a Wi-Fi transition, WifiUdpServer sends one discovery
-                # request followed by sixteen immediate repeats before its
-                # ten-second AppDeamon cadence begins.
-                for _ in range(COZYLIFE_DISCOVERY_STARTUP_BROADCASTS):
-                    self._send_discovery_broadcast()
-                while True:
-                    await asyncio.sleep(COZYLIFE_DISCOVERY_INTERVAL)
-                    self._send_discovery_broadcast()
-            finally:
-                transport.close()
-                if self._discovery_transport is transport:
-                    self._discovery_transport = None
-
-        self._discovery_task = asyncio.create_task(discovery_loop())
-
-    async def async_stop_discovery(self) -> None:
-        """Stop the UDP checker when the config entry unloads."""
-        task = self._discovery_task
-        self._discovery_task = None
-        if task is None:
-            return
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-
     async def _connect(self):
         """Establishes an asynchronous TCP connection to the device."""
-        if self._writer is not None and not self._writer.is_closing():
-            return
-
-        self._disconnect()
         try:
             self._reader, self._writer = await asyncio.wait_for(
                 asyncio.open_connection(self._ip_address, COZYLIFE_PORT),
@@ -262,11 +143,10 @@ class CozyLifeDevice:
             return None
 
         except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
-            # A sleeping device often drops or ignores a connection outside its
-            # wake window. Treat connect timeouts like every other no-response
-            # path so the coordinator can enter catch polling.
             self._disconnect()
             return None
+        finally:
+            self._disconnect()
 
     def _create_message(self, cmd: int, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Helper to create the JSON message structure."""
@@ -279,7 +159,7 @@ class CozyLifeDevice:
         elif cmd == CMD_QUERY:
             return {
                 'pv': 0, 'cmd': cmd, 'sn': sn,
-                'msg': {'attr': payload.get('attr', [QUERY_PROPERTIES])}
+                'msg': {'attr': payload.get('attr', [0])}
             }
         elif cmd == CMD_INFO:
             return {'pv': 0, 'cmd': cmd, 'sn': sn, 'msg': {}}
@@ -342,8 +222,8 @@ class CozyLifeDevice:
         return True
 
     async def async_get_state(self, dpids: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
-        """Query the current device status using CozyLife's status selector."""
-        payload = {"attr": [QUERY_STATUS]}
+        """Queries the current state of the device."""
+        payload = {}
         if dpids:
             payload["attr"] = [int(dpid) for dpid in dpids]
 
