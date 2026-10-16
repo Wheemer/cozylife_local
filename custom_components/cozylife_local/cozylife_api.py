@@ -395,6 +395,27 @@ class CozyLifeDevice:
             return {str(key): value for key, value in msg["data"].items()}
         return None
 
+    async def async_send_status(self) -> bool:
+        """Write the APK status request without waiting for an accepted reply.
+
+        Cozy Life's ``WifiTcpMessage.expectAccept`` is false.  Its reader,
+        rather than the writer, receives the asynchronous sensor report.
+        """
+        try:
+            await self._connect()
+            writer = self._writer
+            if writer is None:
+                return False
+            message = self._create_message(CMD_QUERY, {"attr": [1]})
+            writer.write(
+                (json.dumps(message, separators=(",", ":")) + "\r\n").encode("utf8")
+            )
+            await writer.drain()
+            return True
+        except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+            self._disconnect()
+            return False
+
     async def async_set_state(self, attributes: Dict[str, Any]) -> bool:
         """Sets attributes on the device."""
         msg = await self._send_receive(CMD_SET, attributes)
