@@ -388,6 +388,13 @@ class CozyLifeDevice:
             return {str(k): v for k, v in msg['data'].items()}
         return None
 
+    async def async_get_status(self) -> Optional[Dict[str, Any]]:
+        """Use the APK's local refresh request: cmd 2 with ``attr:[1]``."""
+        msg = await self._send_receive(CMD_QUERY, {"attr": [1]})
+        if msg and "data" in msg:
+            return {str(key): value for key, value in msg["data"].items()}
+        return None
+
     async def async_set_state(self, attributes: Dict[str, Any]) -> bool:
         """Sets attributes on the device."""
         msg = await self._send_receive(CMD_SET, attributes)

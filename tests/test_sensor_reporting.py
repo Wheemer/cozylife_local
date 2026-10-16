@@ -547,8 +547,7 @@ def test_sensor_state_request_does_not_query_or_schedule_dpid_14() -> None:
         dpid = ("4", "8", "14")
         ip_address = "192.0.2.1"
 
-        async def async_get_state(self, dpids=None):
-            assert dpids is None
+        async def async_get_status(self):
             return {"4": 48, "8": 215}
 
     instance = object.__new__(coordinator_module.CozyLifeCoordinator)

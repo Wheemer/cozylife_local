@@ -220,8 +220,8 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def _async_get_environment_state(self) -> dict[str, Any]:
-        """Request state once; subsequent reports arrive through the TCP reader."""
-        state_data = await self.device.async_get_state()
+        """Request state with the APK's local device-status payload."""
+        state_data = await self.device.async_get_status()
         if state_data is None:
             raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
         return state_data
