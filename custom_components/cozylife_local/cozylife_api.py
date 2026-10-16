@@ -102,6 +102,13 @@ class CozyLifeDevice:
             payload = json.loads(data.decode("utf-8").strip())
         except (json.JSONDecodeError, UnicodeDecodeError):
             return
+        message = payload.get("msg")
+        if isinstance(message, dict):
+            _LOGGER.debug(
+                "CozyLife UDP discovery reply: did=%s ip=%s",
+                message.get("did"),
+                message.get("ip"),
+            )
         ip_address = self._discovery_ip(payload, self._device_id)
         if ip_address is None:
             return
