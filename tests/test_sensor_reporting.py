@@ -594,7 +594,9 @@ def test_sensor_without_reported_interval_does_not_use_catalog_cadence() -> None
 
     assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215}
     assert instance._effective_report_interval is None
-    assert instance.update_interval is None
+    assert instance.update_interval == timedelta(
+        seconds=coordinator_module.SENSOR_CATCH_POLL_INTERVAL
+    )
 
 def test_sensor_queries_its_report_interval_when_status_omits_it() -> None:
     """DPID 14 is queried directly while the sensor is awake."""
@@ -738,7 +740,9 @@ def test_timeout_starts_sensor_catch_polling_and_retains_data(monkeypatch) -> No
     )
 
     assert asyncio.run(instance._async_update_data()) == {"4": 48, "8": 215}
-    assert instance.update_interval is None
+    assert instance.update_interval == timedelta(
+        seconds=coordinator_module.SENSOR_CATCH_POLL_INTERVAL
+    )
 
 
 def test_direct_home_appliances_with_dpid_1_get_one_power_switch() -> None:
