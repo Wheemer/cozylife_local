@@ -27,6 +27,7 @@ _UPDATE_LOGGER.setLevel(logging.INFO)
 
 UPDATE_INTERVAL = timedelta(seconds=30)
 SENSOR_DISCOVERY_INTERVAL_SECONDS = 10.0
+SENSOR_CONNECT_TIMEOUT_SECONDS = 1.0
 DEVICE_DISCOVERY_INTERVAL_SECONDS = 30.0
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
@@ -95,6 +96,10 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.device = device
         self._udp_discovery: CozyLifeUdpDiscovery | None = None
         if self._uses_sensor_polling:
+            # The APK's TCP_GLOAL_CONNECT_TIMEOUT is 1000 ms.  This applies
+            # only after a matching UDP reply has made a local status write
+            # eligible; it is not a polling interval.
+            self.device.set_timeout(SENSOR_CONNECT_TIMEOUT_SECONDS)
             self.device.set_message_listener(self._async_handle_device_message)
         self._entry = entry
 
