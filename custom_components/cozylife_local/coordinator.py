@@ -154,11 +154,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.classification.is_sensor_category
             or self.classification.is_environment_sensor
         )
-        interval = (
-            timedelta(seconds=SENSOR_CATCH_POLL_INTERVAL)
-            if self._uses_sensor_polling
-            else UPDATE_INTERVAL
-        )
+        interval = None if self._uses_sensor_polling else UPDATE_INTERVAL
 
         super().__init__(
             hass,
@@ -181,6 +177,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_sensor_response_at: datetime | None = None
         self._current_sensor_response_at: datetime | None = None
         self._first_success_wait_logged = False
+        self._sensor_poll_task: asyncio.Task[None] | None = None
         if self.classification.is_environment_sensor:
             _LOGGER.debug(
                 "[COZYLIFE] Sensor %s starts catch polling every %ss until "
@@ -193,15 +190,47 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def is_sensor(self) -> bool:
         return self._uses_sensor_polling
 
-    def _schedule_next_sensor_wake(self) -> None:
+    def start_sensor_polling(self) -> None:
+        """Start the dedicated high-frequency local probe loop for a sensor."""
+        if not self._uses_sensor_polling or self._sensor_poll_task is not None:
+            return
+        self._sensor_poll_task = self.hass.async_create_background_task(
+            self._async_sensor_polling_loop(),
+            name=f"CozyLife sensor {self.device.ip_address} polling",
+        )
+
+    async def _async_sensor_polling_loop(self) -> None:
+        """Refresh at actual sub-second cadence, outside Coordinator scheduling."""
+        next_probe = time.monotonic()
+        try:
+            while True:
+                await asyncio.sleep(max(0, next_probe - time.monotonic()))
+                next_probe += SENSOR_CATCH_POLL_INTERVAL
+                await self.async_refresh()
+        except asyncio.CancelledError:
+            raise
+
+    async def async_stop_sensor_polling(self) -> None:
+        """Stop the dedicated sensor polling task during config-entry unload."""
+        task = self._sensor_poll_task
+        if task is None:
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        self._sensor_poll_task = None
+
         """Keep probing a sleeping sensor with fresh, short local requests."""
+    def _schedule_next_sensor_wake(self) -> None:
         if not self._uses_sensor_polling:
             return
         # A DPID 14 value is a device reporting preference, not a reliable
         # clock that Home Assistant can use to predict a sub-second listener
         # window. Never stop probing based on that value: doing so is how a
         # successful reading was followed by a long stale period.
-        self.update_interval = timedelta(seconds=SENSOR_CATCH_POLL_INTERVAL)
+        self.update_interval = None
         self._current_sensor_response_at = None
         return
 
@@ -251,6 +280,10 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Poll frequently while waiting for the sleeping sensor to respond."""
         if not self._uses_sensor_polling:
             return
+        # The dedicated task owns sensor timing. Leave DataUpdateCoordinator
+        # unscheduled so its one-second clock cannot dilute the probe cadence.
+        self.update_interval = None
+        return
 
         now = dt_util.utcnow()
         if self._catch_started_at is None:

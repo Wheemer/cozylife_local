@@ -85,6 +85,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Set up platforms (light, switch, sensor, etc.)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    if coordinator.is_sensor:
+        coordinator.start_sensor_polling()
+
 
     # Reload entry when options change
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -102,7 +105,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        coordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        if coordinator.is_sensor:
+            await coordinator.async_stop_sensor_polling()
+
         active_entries = [
             key for key in hass.data[DOMAIN] if key != SCHEDULE_MANAGER
         ]
