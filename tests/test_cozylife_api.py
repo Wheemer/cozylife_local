@@ -39,6 +39,32 @@ def test_state_query_uses_vendor_status_selector() -> None:
     )
 
 
+
+
+def test_connect_reuses_open_local_socket() -> None:
+    class Writer:
+        def is_closing(self) -> bool:
+            return False
+
+    device = api.CozyLifeDevice("192.0.2.1")
+    writer = Writer()
+    calls = 0
+
+    async def open_connection(_host: str, _port: int):
+        nonlocal calls
+        calls += 1
+        return object(), writer
+
+    original_open_connection = api.asyncio.open_connection
+    api.asyncio.open_connection = open_connection
+    try:
+        asyncio.run(device._connect())
+        asyncio.run(device._connect())
+    finally:
+        api.asyncio.open_connection = original_open_connection
+
+    assert calls == 1
+    assert device._writer is writer
 def test_explicit_dpid_query_is_preserved() -> None:
     device = api.CozyLifeDevice("192.0.2.1")
     device._send_receive = AsyncMock(return_value={"data": {"14": 3600}})

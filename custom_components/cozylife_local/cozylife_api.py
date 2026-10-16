@@ -172,6 +172,10 @@ class CozyLifeDevice:
 
     async def _connect(self):
         """Establishes an asynchronous TCP connection to the device."""
+        if self._writer is not None and not self._writer.is_closing():
+            return
+
+        self._disconnect()
         try:
             self._reader, self._writer = await asyncio.wait_for(
                 asyncio.open_connection(self._ip_address, COZYLIFE_PORT),
@@ -249,8 +253,6 @@ class CozyLifeDevice:
             # path so the coordinator can enter catch polling.
             self._disconnect()
             return None
-        finally:
-            self._disconnect()
 
     def _create_message(self, cmd: int, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Helper to create the JSON message structure."""
