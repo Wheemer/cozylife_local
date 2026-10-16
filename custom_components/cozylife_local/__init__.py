@@ -73,7 +73,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Create a coordinator for this device
     coordinator = CozyLifeCoordinator(hass, device, entry)
-    await coordinator.async_start_discovery()
+    # UDP setup is best-effort local discovery.  Do not make the config entry
+    # (and therefore every platform entity) wait for a datagram socket to be
+    # created; the task owns the listener and begins the status loop when it
+    # is ready.
+    hass.async_create_task(coordinator.async_start_discovery())
 
     if coordinator.is_sensor:
         # Do not block setup while the sensor is unavailable.  Its local
