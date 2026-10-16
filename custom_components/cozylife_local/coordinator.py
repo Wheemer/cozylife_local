@@ -1,20 +1,14 @@
 import asyncio
 import logging
-import math
-import time
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from datetime import timedelta
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .cozylife_api import CozyLifeDevice
 from .const import (
-    DEFAULT_SENSOR_REPORT_INTERVAL,
     LIGHT_COUNTDOWN,
-    MIN_SENSOR_REPORT_INTERVAL,
     PLUG_CURRENT,
     PLUG_LED_STATUS,
     PLUG_OVERCURRENT_PROTECTION,
@@ -23,32 +17,24 @@ from .const import (
     PLUG_TIMER_STATUS,
     PLUG_VOLTAGE,
     SENSOR_HUMIDITY,
-    SENSOR_HUMIDITY_SENSITIVITY_DPID,
     SENSOR_TEMPERATURE,
-    SENSOR_REPORT_INTERVAL_DPID,
-    SENSOR_TEMP_SENSITIVITY_DPID,
-    STANDARD_SENSOR_REPORT_INTERVAL,
 )
-from .discovery import classify_device, get_model_info
+from .cozylife_api import CozyLifeDevice, CozyLifeUdpDiscovery
+from .discovery import classify_device
 
 _LOGGER = logging.getLogger(__name__)
 _UPDATE_LOGGER = logging.getLogger(f"{__name__}.updates")
 _UPDATE_LOGGER.setLevel(logging.INFO)
 
 UPDATE_INTERVAL = timedelta(seconds=30)
-SENSOR_WAKE_WINDOW_LEAD = 10
-SENSOR_CATCH_POLL_INTERVAL = 1
-SENSOR_CATCH_TIMEOUT = 120
-SENSOR_WAKE_SAMPLE_SECONDS = 4
-SENSOR_WAKE_SAMPLE_DELAY = 0.15
-SENSOR_REPORT_INTERVAL_CONFIRM_SECONDS = 5
-SENSOR_REPORT_INTERVAL_CONFIRM_DELAY = 0.35
-REPORT_INTERVAL_IGNORED_LIMIT = 3
+SENSOR_DISCOVERY_INTERVAL_SECONDS = 10.0
+SENSOR_CONNECT_TIMEOUT_SECONDS = 1.0
+SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.25
+DEVICE_DISCOVERY_INTERVAL_SECONDS = 30.0
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
 }
-EXPERIMENTAL_SHORT_INTERVAL_KEY = "experimental_short_interval"
 EXTRA_SWITCH_OPTION_DPIDS = (
     PLUG_TIMER_SCHEDULE,
     PLUG_POWER_ON_STATE,
@@ -60,28 +46,6 @@ EXTRA_PLUG_METERING_DPIDS = (
     PLUG_TIMER_STATUS,
     PLUG_VOLTAGE,
 )
-
-
-def _next_sensor_wake_delay(report_interval: int) -> int:
-    """Return how long to wait before polling near the next expected wake."""
-    return max(SENSOR_CATCH_POLL_INTERVAL, report_interval - SENSOR_WAKE_WINDOW_LEAD)
-
-
-def _next_sensor_cycle_delay(
-    last_response_at: datetime,
-    report_interval: int,
-    now: datetime,
-) -> int:
-    """Return delay to the next expected wake window from a previous response."""
-    elapsed = max(0, (now - last_response_at).total_seconds())
-    cycle = math.floor((elapsed + SENSOR_WAKE_WINDOW_LEAD) / report_interval) + 1
-    next_window_elapsed = (cycle * report_interval) - SENSOR_WAKE_WINDOW_LEAD
-    return max(
-        SENSOR_CATCH_POLL_INTERVAL,
-        int(next_window_elapsed - elapsed),
-    )
-
-
 def _is_valid_environment_measurement(
     dpid: str,
     value: Any,
@@ -106,7 +70,7 @@ def _is_valid_environment_measurement(
     return True
 
 
-class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
+class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Manages fetching data from a single CozyLife device."""
 
     def __init__(self, hass: HomeAssistant, device: CozyLifeDevice, entry: ConfigEntry):
@@ -120,31 +84,13 @@ class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             self.classification.is_sensor_category
             or self.classification.is_environment_sensor
         )
-        self._experimental_short_interval = bool(
-            entry.options.get(
-                EXPERIMENTAL_SHORT_INTERVAL_KEY,
-                entry.data.get(EXPERIMENTAL_SHORT_INTERVAL_KEY, False),
-            )
-        )
-        min_report_interval = (
-            MIN_SENSOR_REPORT_INTERVAL
-            if self._experimental_short_interval
-            else STANDARD_SENSOR_REPORT_INTERVAL
-        )
-        self._report_interval = max(
-            min_report_interval,
-            int(
-                entry.options.get(
-                    "report_interval",
-                    entry.data.get("report_interval", DEFAULT_SENSOR_REPORT_INTERVAL),
-                )
-            ),
-        )
-        interval = (
-            timedelta(seconds=SENSOR_CATCH_POLL_INTERVAL)
-            if self._uses_sensor_polling
-            else UPDATE_INTERVAL
-        )
+        # The APK keeps a socket reader alive; sensor reports arrive on that
+        # stream rather than through guessed wake-window polling.
+        # Sensor updates are delivered by the local socket reader after a
+        # matching UDP discovery reply.  A DataUpdateCoordinator interval
+        # would call ``_async_update_data`` directly and bypass the APK's
+        # discovery gate.
+        interval = None if self._uses_sensor_polling else UPDATE_INTERVAL
 
         super().__init__(
             hass,
@@ -154,117 +100,105 @@ class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             config_entry=entry,
         )
         self.device = device
-        self._temp_sensitivity = entry.options.get("temp_sensitivity", None)
-        self._humidity_sensitivity = entry.options.get("humidity_sensitivity", None)
-        self._effective_report_interval = self._report_interval
-        self._missed_expected_wake_logged = False
-        self._catch_started_at: datetime | None = None
-        self._fallback_logged = False
-        self._last_sensor_response_at: datetime | None = None
-        self._current_sensor_response_at: datetime | None = None
-        self._first_success_wait_logged = False
-        self._report_interval_ignored_count = 0
-        self._report_interval_unsupported = False
-        self._experimental_interval_retry_logged = False
-        self._report_interval_write_miss_logged = False
-        if self.classification.is_environment_sensor:
-            _LOGGER.debug(
-                "[COZYLIFE] Sensor %s configured with report_interval=%ss, "
-                "starting catch polling every %ss",
-                device.ip_address,
-                self._report_interval,
-                SENSOR_CATCH_POLL_INTERVAL,
+        self._udp_discovery: CozyLifeUdpDiscovery | None = None
+        self._sensor_probe_task: asyncio.Task[None] | None = None
+        if self._uses_sensor_polling:
+            # The APK's TCP_GLOAL_CONNECT_TIMEOUT is 1000 ms.  Keep that
+            # connection deadline independent from the probe cadence: a
+            # 250 ms deadline can abort the TCP handshake before a waking
+            # device is able to accept the request.
+            self.device.set_timeout(SENSOR_CONNECT_TIMEOUT_SECONDS)
+            self.device.set_message_listener(self._async_handle_device_message)
+        self._entry = entry
+
+    async def async_start_discovery(self) -> None:
+        """Start local UDP address discovery after cached device info loads."""
+        if not self.device.device_id or self._udp_discovery:
+            return
+        interval = (
+            SENSOR_DISCOVERY_INTERVAL_SECONDS
+            if self._uses_sensor_polling
+            else DEVICE_DISCOVERY_INTERVAL_SECONDS
+        )
+        self._udp_discovery = CozyLifeUdpDiscovery(
+            self.device.device_id,
+            self._async_handle_discovered_address,
+            interval,
+        )
+        await self._udp_discovery.async_start()
+        if self._uses_sensor_polling:
+            self._sensor_probe_task = self.hass.async_create_task(
+                self._async_probe_sensor_wake_window()
             )
+
+    async def _async_probe_sensor_wake_window(self) -> None:
+        """Keep local status requests present while a sensor opens TCP."""
+        while True:
+            await self.device.async_send_status()
+            await asyncio.sleep(SENSOR_WAKE_PROBE_INTERVAL_SECONDS)
+
+    async def _async_handle_discovered_address(self, ip_address: str) -> None:
+        """Use an APK discovery reply to refresh this entry's local address."""
+        moved = await self.device.async_update_ip_address(ip_address)
+        if moved:
+            self.hass.config_entries.async_update_entry(
+                self._entry,
+                data={**self._entry.data, "ip_address": ip_address},
+            )
+        if self._uses_sensor_polling:
+            # The APK only queues its local ``attr:[1]`` status message after
+            # a matching UDP discovery reply has populated its online cache.
+            # It does not synchronously await that frame; the socket reader
+            # publishes the resulting device report.
+            await self.device.async_send_status()
+            return
+        await self.async_request_refresh()
 
     @property
     def is_sensor(self) -> bool:
         return self._uses_sensor_polling
 
-    def _schedule_next_sensor_wake(self) -> None:
-        """Poll shortly before the sensor is expected to wake again."""
+    async def async_close(self) -> None:
+        """Release the device reader owned by this config entry."""
+        if self._udp_discovery:
+            await self._udp_discovery.async_stop()
+            self._udp_discovery = None
+        if self._sensor_probe_task:
+            self._sensor_probe_task.cancel()
+            try:
+                await self._sensor_probe_task
+            except asyncio.CancelledError:
+                pass
+            self._sensor_probe_task = None
+        await self.device.async_close()
+
+    async def _async_handle_device_message(self, frame: dict[str, Any]) -> None:
+        """Publish a sensor report received by the persistent device reader."""
         if not self._uses_sensor_polling:
             return
+        message = frame.get("msg", frame)
+        state_data = message.get("data") if isinstance(message, dict) else None
+        if not isinstance(state_data, dict):
+            return
 
-        now = dt_util.utcnow()
-        response_at = self._current_sensor_response_at or now
-        self._last_sensor_response_at = response_at
-        delay = _next_sensor_cycle_delay(
-            response_at,
-            int(self._effective_report_interval),
-            now,
+        received_state = {str(dpid): value for dpid, value in state_data.items()}
+        if not self._has_valid_environment_measurements(received_state):
+            return
+        state_data = self._preserve_environment_measurements(
+            {**(self.data or {}), **received_state}
         )
-        self.update_interval = timedelta(seconds=delay)
-        self._missed_expected_wake_logged = False
-        self._catch_started_at = None
-        self._fallback_logged = False
-        self._first_success_wait_logged = False
-        self._current_sensor_response_at = None
+
+        self.async_set_updated_data(state_data)
         _LOGGER.debug(
-            "[COZYLIFE] Sensor %s responded; next poll window starts in %ss "
-            "(effective report interval: %ss)",
+            "[COZYLIFE] Received sensor report from persistent socket %s: %s",
             self.device.ip_address,
-            delay,
-            self._effective_report_interval,
+            received_state,
         )
-
-    def _schedule_sensor_catch_polling(self) -> None:
-        """Poll frequently while waiting for the sleeping sensor to respond."""
-        if not self._uses_sensor_polling:
-            return
-
-        now = dt_util.utcnow()
-        if self._catch_started_at is None:
-            self._catch_started_at = now
-
-        catch_seconds = (now - self._catch_started_at).total_seconds()
-        if catch_seconds >= SENSOR_CATCH_TIMEOUT:
-            if self._last_sensor_response_at is None:
-                self.update_interval = timedelta(seconds=SENSOR_CATCH_POLL_INTERVAL)
-                if not self._first_success_wait_logged:
-                    self._first_success_wait_logged = True
-                    _LOGGER.debug(
-                        "[COZYLIFE] Sensor %s has not responded yet; continuing "
-                        "first-acquisition polling every %ss so the short wake "
-                        "window is not missed.",
-                        self.device.ip_address,
-                        SENSOR_CATCH_POLL_INTERVAL,
-                    )
-                return
-
-            delay = _next_sensor_cycle_delay(
-                self._last_sensor_response_at,
-                int(self._effective_report_interval),
-                now,
-            )
-            self.update_interval = timedelta(seconds=delay)
-            self._catch_started_at = None
-            if not self._fallback_logged:
-                self._fallback_logged = True
-                _LOGGER.debug(
-                    "[COZYLIFE] Sensor %s did not respond within %ss of the "
-                    "expected wake window; next poll window starts in %ss "
-                    "based on report_interval=%ss.",
-                    self.device.ip_address,
-                    SENSOR_CATCH_TIMEOUT,
-                    delay,
-                    self._effective_report_interval,
-                )
-            return
-
-        self.update_interval = timedelta(seconds=SENSOR_CATCH_POLL_INTERVAL)
-        if not self._missed_expected_wake_logged:
-            self._missed_expected_wake_logged = True
-            _LOGGER.debug(
-                "[COZYLIFE] Sensor %s missed the expected wake window; "
-                "catch polling every %ss",
-                self.device.ip_address,
-                SENSOR_CATCH_POLL_INTERVAL,
-            )
 
     def _preserve_environment_measurements(
         self,
-        state_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        state_data: dict[str, Any],
+    ) -> dict[str, Any]:
         """Keep the last good temp/humidity values across placeholder reports."""
         if not self.classification.is_environment_sensor:
             return state_data
@@ -306,7 +240,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         return sanitized
 
-    def _has_valid_environment_measurements(self, state_data: Dict[str, Any]) -> bool:
+    def _has_valid_environment_measurements(self, state_data: dict[str, Any]) -> bool:
         """Return whether state data contains usable temperature and humidity."""
         if not self.classification.is_environment_sensor:
             return True
@@ -320,68 +254,22 @@ class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             for dpid in ENVIRONMENT_SENSOR_MEASUREMENTS
         )
 
-    async def _async_get_environment_state(self) -> Dict[str, Any]:
-        """Sample a waking environment sensor until real measurements appear."""
-        state_data = await self.device.async_get_state()
+    async def _async_get_environment_state(self) -> dict[str, Any]:
+        """Request state with the APK's local device-status payload."""
+        state_data = await self.device.async_get_status()
         if state_data is None:
             raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
-
-        if self._uses_sensor_polling and self._current_sensor_response_at is None:
-            self._current_sensor_response_at = dt_util.utcnow()
-
-        if not self.classification.is_environment_sensor:
-            return state_data
-
-        if self._has_valid_environment_measurements(state_data):
-            return state_data
-
-        if self._experimental_short_interval:
-            _LOGGER.debug(
-                "[COZYLIFE] Sensor %s returned placeholder environment "
-                "measurements; prioritizing experimental report interval "
-                "reinforcement for this short wake window",
-                self.device.ip_address,
-            )
-            return state_data
-
-        end_time = time.monotonic() + SENSOR_WAKE_SAMPLE_SECONDS
-        best_state = state_data
-        while time.monotonic() < end_time:
-            await asyncio.sleep(SENSOR_WAKE_SAMPLE_DELAY)
-            next_state = await self.device.async_get_state()
-            if next_state is None:
-                continue
-
-            best_state = {**best_state, **next_state}
-            if self._has_valid_environment_measurements(best_state):
-                _LOGGER.debug(
-                    "[COZYLIFE] Sensor %s produced valid environment "
-                    "measurements during wake sampling: %s",
-                    self.device.ip_address,
-                    best_state,
-                )
-                return best_state
-
-        _LOGGER.debug(
-            "[COZYLIFE] Sensor %s wake sampling ended without valid "
-            "temperature/humidity; using best state: %s",
-            self.device.ip_address,
-            best_state,
-        )
-        return best_state
+        return state_data
 
     async def _async_add_hidden_switch_state(
         self,
-        state_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        state_data: dict[str, Any],
+    ) -> dict[str, Any]:
         """Merge switch option DPIDs that are omitted from default state."""
         if not self.classification.supports_switch_entities:
             return state_data
 
-        model_info = get_model_info(self.device.pid)
         known_dpids = set(self.device.dpid or [])
-        if model_info:
-            known_dpids.update(model_info.dpids)
 
         candidate_dpids = set(EXTRA_SWITCH_OPTION_DPIDS)
         if self.classification.supports_plug_metering:
@@ -408,16 +296,13 @@ class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def _async_add_hidden_light_state(
         self,
-        state_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        state_data: dict[str, Any],
+    ) -> dict[str, Any]:
         """Merge safe light countdown state omitted from default state."""
         if not self.classification.is_light or LIGHT_COUNTDOWN in state_data:
             return state_data
 
-        model_info = get_model_info(self.device.pid)
         known_dpids = set(self.device.dpid or [])
-        if model_info:
-            known_dpids.update(model_info.dpids)
 
         if LIGHT_COUNTDOWN not in known_dpids:
             return state_data
@@ -433,212 +318,30 @@ class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         return {**state_data, **hidden_state}
 
-    async def _async_confirm_report_interval(self, state_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Write the report interval and keep it set while the sensor is awake."""
-        if self._report_interval_unsupported:
-            state_data[SENSOR_REPORT_INTERVAL_DPID] = self._effective_report_interval
-            return state_data
-
-        target_interval = self._report_interval
-        best_state = dict(state_data)
-        end_time = time.monotonic() + SENSOR_REPORT_INTERVAL_CONFIRM_SECONDS
-        write_attempts = 0
-        accepted_write = False
-        confirmed_write = best_state.get(SENSOR_REPORT_INTERVAL_DPID) == target_interval
-
-        while True:
-            write_attempts += 1
-            accepted = await self.device.async_set_state(
-                {SENSOR_REPORT_INTERVAL_DPID: target_interval}
-            )
-            if not accepted:
-                if not self._report_interval_write_miss_logged:
-                    self._report_interval_write_miss_logged = True
-                    _LOGGER.debug(
-                        "[COZYLIFE] Report interval update to %ss was not "
-                        "accepted by %s; the sensor may already be asleep or "
-                        "may not support this interval.",
-                        target_interval,
-                        self.device.ip_address,
-                    )
-                break
-
-            accepted_write = True
-            self._report_interval_write_miss_logged = False
-            self._effective_report_interval = target_interval
-            await asyncio.sleep(SENSOR_REPORT_INTERVAL_CONFIRM_DELAY)
-            readback = await self.device.async_get_state()
-            if readback is not None:
-                best_state.update(readback)
-                if readback.get(SENSOR_REPORT_INTERVAL_DPID) == target_interval:
-                    confirmed_write = True
-                    self._effective_report_interval = target_interval
-                    _LOGGER.debug(
-                        "[COZYLIFE] Report interval update to %ss confirmed by "
-                        "%s after %s attempt(s)",
-                        target_interval,
-                        self.device.ip_address,
-                        write_attempts,
-                    )
-                    if (
-                        not self._experimental_short_interval
-                        or time.monotonic() >= end_time
-                    ):
-                        return best_state
-                    continue
-
-                _LOGGER.debug(
-                    "[COZYLIFE] Report interval write attempt %s for %s read "
-                    "back %s instead of %ss",
-                    write_attempts,
-                    self.device.ip_address,
-                    readback.get(SENSOR_REPORT_INTERVAL_DPID),
-                    target_interval,
-                )
-            elif accepted_write:
-                _LOGGER.debug(
-                    "[COZYLIFE] Report interval write attempt %s to %ss was "
-                    "accepted by %s but readback was unavailable; assuming "
-                    "the sensor returned to sleep.",
-                    write_attempts,
-                    target_interval,
-                    self.device.ip_address,
-                )
-                break
-
-            if (
-                not self._experimental_short_interval
-                or time.monotonic() >= end_time
-            ):
-                break
-
-        if self._experimental_short_interval and (confirmed_write or accepted_write):
-            if await self.device.async_set_state({SENSOR_REPORT_INTERVAL_DPID: target_interval}):
-                best_state[SENSOR_REPORT_INTERVAL_DPID] = target_interval
-                self._effective_report_interval = target_interval
-                _LOGGER.debug(
-                    "[COZYLIFE] Sent final report interval reinforcement to %ss "
-                    "for %s near the end of the wake window",
-                    target_interval,
-                    self.device.ip_address,
-                )
-            else:
-                _LOGGER.debug(
-                    "[COZYLIFE] Final report interval reinforcement to %ss for "
-                    "%s was not accepted; the sensor may have returned to sleep",
-                    target_interval,
-                    self.device.ip_address,
-                )
-
-        if confirmed_write or accepted_write:
-            self._effective_report_interval = target_interval
-        else:
-            try:
-                self._effective_report_interval = int(
-                    best_state.get(SENSOR_REPORT_INTERVAL_DPID)
-                )
-            except (TypeError, ValueError):
-                self._effective_report_interval = target_interval
-
-        return best_state
-
-    async def _async_update_data(self) -> Dict[str, Any]:
+    async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from device."""
         try:
-            if not self.device.device_id or not self.device.dpid:
-                if not await self.device.async_update_device_info():
-                    raise UpdateFailed(f"Failed to get full device info for {self.device.ip_address}")
+            if (
+                (not self.device.device_id or not self.device.dpid)
+                and not await self.device.async_update_device_info()
+            ):
+                raise UpdateFailed(
+                    f"Failed to get full device info for {self.device.ip_address}"
+                )
 
             state_data = await self._async_get_environment_state()
+            if (
+                getattr(self, "_entry", None)
+                and self._entry.data.get("ip_address") != self.device.ip_address
+            ):
+                self.hass.config_entries.async_update_entry(
+                    self._entry,
+                    data={**self._entry.data, "ip_address": self.device.ip_address},
+                )
+
             state_data = await self._async_add_hidden_switch_state(state_data)
             state_data = await self._async_add_hidden_light_state(state_data)
-
-            # Push sensitivity settings before report interval reinforcement so
-            # DPID 14 can be the final write near the end of the wake window.
-            if self.classification.is_environment_sensor:
-                updates = {}
-                if self._temp_sensitivity is not None and state_data.get(SENSOR_TEMP_SENSITIVITY_DPID) != self._temp_sensitivity:
-                    updates[SENSOR_TEMP_SENSITIVITY_DPID] = self._temp_sensitivity
-                if self._humidity_sensitivity is not None and state_data.get(SENSOR_HUMIDITY_SENSITIVITY_DPID) != self._humidity_sensitivity:
-                    updates[SENSOR_HUMIDITY_SENSITIVITY_DPID] = self._humidity_sensitivity
-                if updates:
-                    _LOGGER.debug(f"[COZYLIFE] Pushing sensitivity settings {updates} to {self.device.ip_address}")
-                    if await self.device.async_set_state(updates):
-                        state_data.update(updates)
-
-            # Check if report interval needs to be pushed (first connection or reverted by device)
-            if (
-                self.classification.is_environment_sensor
-                and (
-                    self._experimental_short_interval
-                    or state_data.get(SENSOR_REPORT_INTERVAL_DPID) != self._report_interval
-                )
-            ):
-                reported_interval = state_data.get(SENSOR_REPORT_INTERVAL_DPID)
-                if reported_interval != self._report_interval:
-                    _LOGGER.debug(
-                        "[COZYLIFE] Report interval is %s, configured value is %ss "
-                        "for %s",
-                        reported_interval,
-                        self._report_interval,
-                        self.device.ip_address,
-                    )
-                if self._missed_expected_wake_logged or self._fallback_logged:
-                    try:
-                        self._effective_report_interval = int(reported_interval)
-                    except (TypeError, ValueError):
-                        self._effective_report_interval = self._report_interval
-                    else:
-                        if not self._report_interval_unsupported:
-                            _LOGGER.debug(
-                                "[COZYLIFE] Sensor %s did not wake on requested "
-                                "report_interval=%ss; scheduling from device-reported "
-                                "interval=%ss",
-                                self.device.ip_address,
-                                self._report_interval,
-                                self._effective_report_interval,
-                            )
-                    if (
-                        not self._report_interval_unsupported
-                        and self._effective_report_interval != self._report_interval
-                    ):
-                        if self._experimental_short_interval:
-                            if not self._experimental_interval_retry_logged:
-                                self._experimental_interval_retry_logged = True
-                                _LOGGER.debug(
-                                    "[COZYLIFE] Sensor %s reverted from "
-                                    "experimental report_interval=%ss to %ss; "
-                                    "continuing to reapply the experimental "
-                                    "interval on future wakes.",
-                                    self.device.ip_address,
-                                    self._report_interval,
-                                    self._effective_report_interval,
-                                )
-                        else:
-                            self._report_interval_ignored_count += 1
-                            if (
-                                self._report_interval_ignored_count
-                                >= REPORT_INTERVAL_IGNORED_LIMIT
-                            ):
-                                self._report_interval_unsupported = True
-                                _LOGGER.debug(
-                                    "[COZYLIFE] Sensor %s keeps reporting "
-                                    "report_interval=%ss after %s write attempts; "
-                                    "stopping report_interval writes for this "
-                                    "runtime.",
-                                    self.device.ip_address,
-                                    self._effective_report_interval,
-                                    self._report_interval_ignored_count,
-                                )
-
-                state_data = await self._async_confirm_report_interval(state_data)
-            elif self.classification.is_environment_sensor:
-                self._effective_report_interval = self._report_interval
-                self._report_interval_ignored_count = 0
-                self._report_interval_unsupported = False
-
             state_data = self._preserve_environment_measurements(state_data)
-            self._schedule_next_sensor_wake()
             _LOGGER.debug(f"[COZYLIFE] Successfully fetched state for {self.device.ip_address}: {state_data}")
             return state_data
 
@@ -646,8 +349,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # For sleeping sensors: if we have previous data, return it to keep entities available.
             # The device only wakes periodically so connection failures are expected.
             if self._uses_sensor_polling and self.data is not None:
-                self._schedule_sensor_catch_polling()
-                return self.data if self.data else {}
+                return self.data
             raise
 
         except Exception as err:
