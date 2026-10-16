@@ -45,6 +45,7 @@ async def async_setup_entry(
     """Set up CozyLife sensor platform."""
     coordinator: CozyLifeCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
+    _LOGGER.debug("Sensor setup pid=%s dpids=%s environment=%s", coordinator.device.pid, coordinator.device.dpid, coordinator.classification.is_environment_sensor)
     if (
         not coordinator.device.dpid
         and not coordinator.classification.is_environment_sensor
