@@ -120,6 +120,7 @@ async def async_setup_entry(
         return
 
     async_add_entities(entities)
+    _LOGGER.debug("Adding CozyLife sensor entities: %s", [type(entity).__name__ for entity in entities])
 
 
 class PlugSensorDescription:
