@@ -5,9 +5,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, PLATFORMS
-from .cozylife_api import CozyLifeDevice
 from .coordinator import CozyLifeCoordinator
-from .discovery import async_load_model_catalog
+from .cozylife_api import CozyLifeDevice
+from .discovery import async_load_model_catalog, get_model_info
 from .schedule import SCHEDULE_MANAGER, async_setup_schedule_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,7 +41,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     cached_dpids = entry.data.get("dpids")
 
     if cached_did and cached_pid and cached_dtp and cached_dpids:
-        device.restore_from_cache(cached_did, cached_pid, cached_dtp, cached_dpids)
+        model_info = get_model_info(cached_pid)
+        merged_dpids = sorted(
+            {str(dpid) for dpid in cached_dpids}
+            | ({str(dpid) for dpid in model_info.dpids} if model_info else set())
+        )
+        device.restore_from_cache(cached_did, cached_pid, cached_dtp, merged_dpids)
+        if merged_dpids != cached_dpids:
+            hass.config_entries.async_update_entry(
+                entry,
+                data={**entry.data, "dpids": merged_dpids},
+            )
+            _LOGGER.debug(
+                "Merged APK catalog DPIDs into cached device info for %s.",
+                ip_address,
+            )
         _LOGGER.debug(f"Restored device info for {ip_address} from cache.")
     else:
         # No cache — must contact device (first-time setup)
@@ -59,10 +73,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Create a coordinator for this device
     coordinator = CozyLifeCoordinator(hass, device, entry)
+    # UDP setup is best-effort local discovery.  Do not make the config entry
+    # (and therefore every platform entity) wait for a datagram socket to be
+    # created; the task owns the listener and begins the status loop when it
+    # is ready.
+    hass.async_create_task(coordinator.async_start_discovery())
 
     if coordinator.is_sensor:
-        # Sensors sleep for 30+ min — don't block setup on first refresh.
-        # Seed with empty data so polling starts, entities update on first successful poll.
+        # Do not block setup while the sensor is unavailable.  The coordinator
+        # keeps the configured local address available for wake-window probes;
+        # UDP discovery independently refreshes that address when a matching
+        # reply arrives.
         coordinator.async_set_updated_data({})
     else:
         await coordinator.async_config_entry_first_refresh()
@@ -88,7 +109,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        coordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        await coordinator.async_close()
         active_entries = [
             key for key in hass.data[DOMAIN] if key != SCHEDULE_MANAGER
         ]
