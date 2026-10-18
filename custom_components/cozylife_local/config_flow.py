@@ -23,7 +23,12 @@ from .const import (
     SENSOR_TYPE_CODE,
 )
 from .cozylife_api import CozyLifeDevice
-from .discovery import async_load_model_catalog, classify_device
+from .discovery import (
+    async_load_model_catalog,
+    classify_device,
+    get_model_info,
+    get_wifi_environment_sensor_models,
+)
 from .network_discovery import (
     AUTO_NETWORK,
     DiscoveredDevice,
@@ -80,9 +85,14 @@ def _device_schema_sensor(ip_address: str) -> vol.Schema:
 
 def _sleeping_sensor_schema(ip_address: str) -> vol.Schema:
     """Return sleeping environment sensor setup schema."""
+    sensor_options = {
+        model.product_id: f"{model.model_name or 'Temperature/humidity sensor'} ({model.product_id})"
+        for model in get_wifi_environment_sensor_models()
+    }
     return vol.Schema({
         vol.Required("ip_address", default=ip_address): str,
         vol.Optional("sleeping_sensor", default=True): bool,
+        vol.Required("sensor_pid", default=SLEEPING_SENSOR_PID): vol.In(sensor_options),
     })
 
 class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -132,6 +142,13 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="already_configured")
 
             if sleeping_sensor:
+                await async_load_model_catalog(self.hass)
+                if "sensor_pid" not in user_input:
+                    return self.async_show_form(
+                        step_id="user",
+                        data_schema=_sleeping_sensor_schema(ip_address),
+                        errors={},
+                    )
                 return await self._async_create_sleeping_sensor_entry(
                     ip_address,
                     user_input,
@@ -167,18 +184,22 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         user_input: Dict[str, Any],
     ) -> FlowResult:
         """Create a temp/humidity sensor entry without waking the device."""
-        device_id = f"sleeping_sensor_{ip_address}"
+        pid = str(user_input.get("sensor_pid", SLEEPING_SENSOR_PID))
+        model = get_model_info(pid)
+        if model is None or model not in get_wifi_environment_sensor_models():
+            raise ValueError(f"Unsupported Wi-Fi environment sensor PID: {pid}")
+        device_id = f"sleeping_sensor_{pid}_{ip_address}"
         await self.async_set_unique_id(device_id)
         self._abort_if_unique_id_configured()
 
         return self.async_create_entry(
-            title=f"CozyLife Temp/Humidity @ {ip_address}",
+            title=f"{model.model_name or 'CozyLife Temp/Humidity'} @ {ip_address}",
             data={
                 "ip_address": ip_address,
                 "device_id": device_id,
-                "pid": SLEEPING_SENSOR_PID,
+                "pid": pid,
                 "device_type_code": SENSOR_TYPE_CODE,
-                "dpids": SLEEPING_SENSOR_DPIDS,
+                "dpids": sorted(model.dpids),
             },
         )
 
@@ -208,7 +229,6 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ip_address,
                 DEFAULT_MIN_KELVIN,
                 DEFAULT_MAX_KELVIN,
-                DEFAULT_SENSOR_REPORT_INTERVAL,
                 {"ip_address": ip_address},
             )
 

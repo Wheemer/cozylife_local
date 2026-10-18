@@ -274,3 +274,14 @@ def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:
         model = get_model_info(pid)
         assert model is not None
         assert required <= model.dpids, pid
+
+
+def test_manual_sensor_choices_include_only_apk_wifi_profiles() -> None:
+    """Manual sleeping-sensor setup must not offer Bluetooth or Zigbee PIDs."""
+    _load_api()
+    from cozylife_local.discovery import get_wifi_environment_sensor_models
+
+    pids = {model.product_id for model in get_wifi_environment_sensor_models()}
+    assert {"Z4tRml", "s1AxFq", "nrQdBz"} <= pids
+    assert "bQ2cGF" not in pids
+    assert "v2kv9f" not in pids

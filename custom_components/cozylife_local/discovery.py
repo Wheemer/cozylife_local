@@ -141,6 +141,21 @@ def get_model_info(pid: str | None) -> ModelInfo | None:
     return _load_model_catalog().get(pid)
 
 
+def get_wifi_environment_sensor_models() -> tuple[ModelInfo, ...]:
+    """Return APK-catalogued Wi-Fi temperature/humidity sensor profiles."""
+    required = {SENSOR_HUMIDITY, SENSOR_TEMPERATURE, SENSOR_BATTERY}
+    return tuple(
+        sorted(
+            (
+                model
+                for model in _load_model_catalog().values()
+                if model.network_type == "02" and required <= model.dpids
+            ),
+            key=lambda model: (model.model_name or "", model.product_id),
+        )
+    )
+
+
 def _count_from_model_name(name: str | None) -> int | None:
     if not name:
         return None
