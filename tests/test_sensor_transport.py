@@ -28,6 +28,29 @@ def _load_api():
     return CozyLifeDevice
 
 
+def _load_coordinator():
+    """Load coordinator logic with the minimal Home Assistant interfaces it uses."""
+    _load_api()
+    config_entries = types.ModuleType("homeassistant.config_entries")
+    config_entries.ConfigEntry = object
+    helpers = types.ModuleType("homeassistant.helpers")
+    update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
+
+    class DataUpdateCoordinator:
+        @classmethod
+        def __class_getitem__(cls, _item):
+            return cls
+
+    update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
+    update_coordinator.UpdateFailed = RuntimeError
+    sys.modules["homeassistant.config_entries"] = config_entries
+    sys.modules["homeassistant.helpers"] = helpers
+    sys.modules["homeassistant.helpers.update_coordinator"] = update_coordinator
+    from cozylife_local.coordinator import CozyLifeCoordinator
+
+    return CozyLifeCoordinator
+
+
 def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None:
     """The local writer sends attr:[1] and the reader keeps every report."""
     CozyLifeDevice = _load_api()
@@ -301,3 +324,15 @@ def test_platforms_exclude_home_assistant_schedule_emulation() -> None:
     from cozylife_local.const import PLATFORMS
 
     assert "time" not in PLATFORMS
+
+
+def test_environment_report_accepts_a_valid_partial_measurement() -> None:
+    """A valid reading must not be discarded because its paired DPID is absent."""
+    CozyLifeCoordinator = _load_coordinator()
+    coordinator = object.__new__(CozyLifeCoordinator)
+    coordinator.classification = types.SimpleNamespace(is_environment_sensor=True)
+
+    assert coordinator._has_valid_environment_measurements({"8": 221})
+    assert coordinator._has_valid_environment_measurements({"4": 48})
+    assert not coordinator._has_valid_environment_measurements({"8": 0})
+    assert not coordinator._has_valid_environment_measurements({"4": 0})
