@@ -227,3 +227,19 @@ def test_persistent_transport_preserves_existing_info_state_and_set_commands() -
             await server.wait_closed()
 
     asyncio.run(exercise())
+
+
+def test_catalog_classification_requires_explicit_local_capabilities() -> None:
+    """Do not expose catalog-only lights or non-Wi-Fi sensors as local devices."""
+    _load_api()
+    from cozylife_local.discovery import classify_device
+
+    known_light = classify_device("asdlks", "01", ["1", "2", "3", "4"])
+    catalog_only_light = classify_device("kpfzBm", "01", [])
+    wifi_environment_sensor = classify_device("Z4tRml", "03", ["4", "8", "9"])
+    zigbee_environment_sensor = classify_device("v2kv9f", "03", ["8", "9"])
+
+    assert known_light.is_light
+    assert not catalog_only_light.is_light
+    assert wifi_environment_sensor.is_environment_sensor
+    assert not zigbee_environment_sensor.is_environment_sensor

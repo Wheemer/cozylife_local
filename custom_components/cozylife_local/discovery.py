@@ -227,14 +227,11 @@ def classify_device(
     model_info = get_model_info(pid)
     model_name = model_info.model_name if model_info else None
 
-    is_environment_sensor = (
-        pid in KNOWN_SENSOR_PIDS
-        or (
-            SENSOR_TEMPERATURE in dpid_set
-            and SENSOR_BATTERY in dpid_set
-            and SWITCH not in dpid_set
-        )
-    )
+    # Sensor category ``03`` includes Zigbee/BLE products.  This integration
+    # speaks the Wi-Fi TCP protocol only, so opt into sleeping-sensor handling
+    # for a positively identified Wi-Fi PID rather than guessing from reused
+    # temperature and battery DPIDs.
+    is_environment_sensor = pid in KNOWN_SENSOR_PIDS
 
     if model_info:
         effective_type_code = model_info.type_code
@@ -257,6 +254,7 @@ def classify_device(
     # that fallback when the device also exposes light capability DPIDs.
     is_light = (
         not is_environment_sensor
+        and SWITCH in dpid_set
         and (
             effective_type_code == LIGHT_TYPE_CODE
             or (

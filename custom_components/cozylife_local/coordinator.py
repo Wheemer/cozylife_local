@@ -80,10 +80,10 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             device.device_type_code,
             device.dpid,
         )
-        self._uses_sensor_polling = (
-            self.classification.is_sensor_category
-            or self.classification.is_environment_sensor
-        )
+        # Catalog category ``Sensor`` also contains Zigbee/BLE products. Only
+        # explicitly identified Wi-Fi environment sensors use local sleeping
+        # sensor transport.
+        self._uses_sensor_polling = self.classification.is_environment_sensor
         # The APK keeps a socket reader alive; sensor reports arrive on that
         # stream rather than from an assumed report schedule.  Keep wake-window
         # probing outside DataUpdateCoordinator: it uses the configured local
