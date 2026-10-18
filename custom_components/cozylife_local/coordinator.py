@@ -154,6 +154,10 @@ class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             config_entry=entry,
         )
         self.device = device
+        # The device reader is the single owner of inbound local frames.  A
+        # device can report a change between scheduled refreshes, so route
+        # every report with data through the coordinator as soon as it arrives.
+        self.device.set_message_listener(self._async_handle_device_message)
         self._temp_sensitivity = entry.options.get("temp_sensitivity", None)
         self._humidity_sensitivity = entry.options.get("humidity_sensitivity", None)
         self._effective_report_interval = self._report_interval
@@ -179,6 +183,29 @@ class CozyLifeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     @property
     def is_sensor(self) -> bool:
         return self._uses_sensor_polling
+
+    async def _async_handle_device_message(self, frame: Dict[str, Any]) -> None:
+        """Publish an inbound local report without waiting for a refresh.
+
+        The persistent transport also delivers ordinary command replies here.
+        Merging their DPID data is intentional: a partial device report must
+        not discard an entity value established by an earlier refresh.
+        """
+        message = frame.get("msg") if isinstance(frame, dict) else None
+        reported_data = message.get("data") if isinstance(message, dict) else None
+        if not isinstance(reported_data, dict):
+            return
+
+        state_data = {
+            **(self.data or {}),
+            **{str(dpid): value for dpid, value in reported_data.items()},
+        }
+        self.async_set_updated_data(state_data)
+        _LOGGER.debug(
+            "Received local report from persistent socket %s: %s",
+            self.device.ip_address,
+            reported_data,
+        )
 
     def _schedule_next_sensor_wake(self) -> None:
         """Poll shortly before the sensor is expected to wake again."""

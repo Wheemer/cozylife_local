@@ -28,6 +28,34 @@ def _load_api():
     return CozyLifeDevice
 
 
+def _load_coordinator():
+    """Load the coordinator with the small Home Assistant surface it needs."""
+    _load_api()
+    config_entries = types.ModuleType("homeassistant.config_entries")
+    config_entries.ConfigEntry = object
+    helpers = types.ModuleType("homeassistant.helpers")
+    update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
+
+    class DataUpdateCoordinator:
+        @classmethod
+        def __class_getitem__(cls, _item):
+            return cls
+
+    update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
+    update_coordinator.UpdateFailed = RuntimeError
+    util = types.ModuleType("homeassistant.util")
+    dt = types.ModuleType("homeassistant.util.dt")
+    sys.modules["homeassistant.config_entries"] = config_entries
+    sys.modules["homeassistant.helpers"] = helpers
+    sys.modules["homeassistant.helpers.update_coordinator"] = update_coordinator
+    sys.modules["homeassistant.util"] = util
+    sys.modules["homeassistant.util.dt"] = dt
+    sys.modules.pop("cozylife_local.coordinator", None)
+    from cozylife_local.coordinator import CozyLifeCoordinator
+
+    return CozyLifeCoordinator
+
+
 def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None:
     """The local writer sends attr:[1] and the reader keeps every report."""
     CozyLifeDevice = _load_api()
@@ -225,5 +253,39 @@ def test_persistent_transport_preserves_existing_info_state_and_set_commands() -
             await device.async_close()
             server.close()
             await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
+def test_coordinator_publishes_partial_inbound_reports_without_a_refresh() -> None:
+    """An unsolicited device report updates only the DPIDs it contains."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    class FakeCoordinator:
+        data = {"1": False, "11": 42}
+
+        class Device:
+            ip_address = "127.0.0.1"
+
+        device = Device()
+
+        def __init__(self) -> None:
+            self.published: list[dict] = []
+
+        def async_set_updated_data(self, data: dict) -> None:
+            self.published.append(data)
+            self.data = data
+
+    async def exercise() -> None:
+        coordinator = FakeCoordinator()
+        await CozyLifeCoordinator._async_handle_device_message(
+            coordinator,
+            {"cmd": 2, "msg": {"data": {"1": True}}},
+        )
+        await CozyLifeCoordinator._async_handle_device_message(
+            coordinator,
+            {"cmd": 2, "msg": {"attr": [1]}},
+        )
+        assert coordinator.published == [{"1": True, "11": 42}]
 
     asyncio.run(exercise())
