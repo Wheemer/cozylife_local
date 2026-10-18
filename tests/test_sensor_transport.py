@@ -293,3 +293,11 @@ def test_manual_sensor_choices_include_only_apk_wifi_profiles() -> None:
     assert {"Z4tRml", "s1AxFq", "nrQdBz"} <= pids
     assert "bQ2cGF" not in pids
     assert "v2kv9f" not in pids
+
+
+def test_platforms_exclude_home_assistant_schedule_emulation() -> None:
+    """Keep scheduling in Home Assistant automations, not this integration."""
+    _load_api()
+    from cozylife_local.const import PLATFORMS
+
+    assert "time" not in PLATFORMS
