@@ -54,7 +54,6 @@ We are still looking for reports to expand coverage for:
 *   📈 **Smart Energy Metering**: Exposes voltage, current, active power, and cumulative energy sensors (compatible with the HA Energy Dashboard), plus supported countdown and plug option controls.
 *   💡 **State & Color-Mode Safeguards**: Smooth transitions and automatic work-mode state preservation prevents smart lights from glitching or flashing dark blue during custom RGB commands.
 *   🕒 **Light Countdowns**: Exposes validated local countdown controls on compatible bulbs.
-*   🛠️ **Developer-Mode Setup**: Features a "Skip validation" config option, allowing advanced users to add remote devices or provision entities without waiting for active handshakes.
 
 ---
 
@@ -90,7 +89,6 @@ Once HACS has completed installation and Home Assistant has restarted:
    * **Auto-Scan**: Leave the IP field blank, review the CIDR, and hit submit to let the integration locate devices on your subnet.
    * **Manual Setup**: Input the static IP address of your device.
    * **Sleeping Environment Sensor**: If manual provisioning is for a battery-powered sensor, check the "Sleeping temp/humidity sensor" box to avoid handshake timeouts.
-   * **Skip Validation**: Check this option to add remote or offline devices immediately (Developer Mode).
 
 ### Sleeping Environment Sensors
 
@@ -157,9 +155,7 @@ CozyLife devices report their functionalities via standard Data Point IDs (DPIDs
 | `27` | Active Current (mA) | Live electrical current monitoring. |
 | `28` | Active Power (W) | Live active load power monitoring. |
 | `29` | Line Voltage (V) | Live grid voltage monitoring. |
-| `30` | Electrical Fault | Exposes physical load fault alarms reported by power monitoring plugs. |
 | `32` | Overcurrent Protection | Config switch for compatible metered plugs. |
-| `101`| Occupancy Sensor | Proximity and movement detection via millimeter-wave radar modules. |
 
 ---
 

@@ -144,7 +144,7 @@ class CozyLifeSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
                 self.coordinator.data[BITMASK_DPID] = new_bitmask
                 self.async_write_ha_state()
             # Do NOT request a refresh here, as it causes a race condition.
-            # The regular scheduled update will sync the state later.
+            # The next coordinator refresh will sync the state later.
         else:
             _LOGGER.debug(f"Switch {self.name} is already in the desired state.")
 

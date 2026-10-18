@@ -37,7 +37,6 @@ DATA_SCHEMA = vol.Schema({
     vol.Optional("ip_address", default="", description={"suggested_value": "192.168.1.100"}): str,
     vol.Optional("network_cidr", default=AUTO_NETWORK): str,
     vol.Optional("sleeping_sensor", default=False): bool,
-    vol.Optional("skip_validation", default=False): bool,
 })
 
 SLEEPING_SENSOR_PID = "Z4tRml"
@@ -56,15 +55,6 @@ def _device_schema_light(ip_address: str, pid: str | None = None) -> vol.Schema:
         vol.Required("ip_address", default=ip_address): str,
         vol.Optional("min_kelvin", default=min_kelvin): vol.All(int, vol.Range(min=1000, max=10000)),
         vol.Optional("max_kelvin", default=max_kelvin): vol.All(int, vol.Range(min=1000, max=10000)),
-        vol.Optional("skip_validation", default=False): bool,
-    })
-
-
-def _device_schema_sensor(ip_address: str) -> vol.Schema:
-    """Return an environment sensor setup schema with the selected IP carried forward."""
-    return vol.Schema({
-        vol.Required("ip_address", default=ip_address): str,
-        vol.Optional("skip_validation", default=False): bool,
     })
 
 
@@ -94,18 +84,10 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ip_address = user_input.get("ip_address", "").strip()
             network_cidr = user_input.get("network_cidr", AUTO_NETWORK)
             sleeping_sensor = user_input.get("sleeping_sensor", False)
-            skip_validation = user_input.get("skip_validation", False)
 
             if not ip_address:
                 if sleeping_sensor:
                     errors["base"] = "ip_required_for_sleeping_sensor"
-                    return self.async_show_form(
-                        step_id="user",
-                        data_schema=DATA_SCHEMA,
-                        errors=errors,
-                    )
-                if skip_validation:
-                    errors["base"] = "ip_required_for_skip_validation"
                     return self.async_show_form(
                         step_id="user",
                         data_schema=DATA_SCHEMA,
@@ -139,25 +121,12 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input,
                 )
 
-            if skip_validation:
-                _LOGGER.info(f"Skipping validation for {ip_address} as requested for development.")
-                await self.async_set_unique_id(ip_address)
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=f"CozyLife Dev @ {ip_address}",
-                    data={
-                        "ip_address": ip_address,
-                        "min_kelvin": user_input.get("min_kelvin", DEFAULT_MIN_KELVIN),
-                        "max_kelvin": user_input.get("max_kelvin", DEFAULT_MAX_KELVIN),
-                    }
-                )
-            else:
-                return await self._async_create_entry_from_ip(
-                    ip_address,
-                    user_input.get("min_kelvin", DEFAULT_MIN_KELVIN),
-                    user_input.get("max_kelvin", DEFAULT_MAX_KELVIN),
-                    user_input,
-                )
+            return await self._async_create_entry_from_ip(
+                ip_address,
+                user_input.get("min_kelvin", DEFAULT_MIN_KELVIN),
+                user_input.get("max_kelvin", DEFAULT_MAX_KELVIN),
+                user_input,
+            )
 
         return self.async_show_form(
             step_id="user", data_schema=DATA_SCHEMA, errors=errors

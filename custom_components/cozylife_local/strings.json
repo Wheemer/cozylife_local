@@ -8,7 +8,6 @@
           "ip_address": "IP Address (Leave blank to scan)",
           "network_cidr": "Network CIDR / Subnet Range",
           "sleeping_sensor": "Sleeping temp/humidity sensor",
-          "skip_validation": "Skip validation (Developer Mode)",
           "min_kelvin": "Minimum Kelvin (Warm White)",
           "max_kelvin": "Maximum Kelvin (Cool White)"
         },
@@ -16,7 +15,6 @@
           "ip_address": "Static IP address of your device (e.g. 192.168.1.150). Recommended to set a DHCP reservation in your router.",
           "network_cidr": "Subnet to scan during discovery. Use 'auto' to scan the default local network interface or a CIDR range (e.g. 192.168.1.0/24).",
           "sleeping_sensor": "Check this ONLY for battery-powered sensors. Caches metadata so Home Assistant builds entities without waiting for the sleeping hardware to wake up.",
-          "skip_validation": "Skip active network handshake. Recommended only for remote environments, mock tests, or when adding an offline device.",
           "min_kelvin": "The warmest light color temperature supported by your bulb hardware (typical range: 2000K to 2700K).",
           "max_kelvin": "The coolest light color temperature supported by your bulb hardware (typical range: 5000K to 6500K)."
         }
@@ -34,7 +32,6 @@
       "invalid_ip": "Please enter a valid IPv4 address (e.g., 192.168.1.50).",
       "invalid_network": "Please enter a valid IPv4 network CIDR (e.g. 192.168.1.0/24) or use the keyword 'auto'.",
       "ip_required_for_sleeping_sensor": "A single, static IP address is required when manually provisioning a sleeping battery sensor.",
-      "ip_required_for_skip_validation": "A single, static IP address is required when bypass validation (Developer Mode) is enabled.",
       "network_too_large": "The specified subnet range is too large to scan. Please restrict your scan to a /24 network (256 hosts) or smaller.",
       "no_devices_found": "No online CozyLife devices were detected on the network. Check your device's power, Wi-Fi connection, and ensure it is on the same subnet as Home Assistant.",
       "no_network": "Home Assistant could not automatically detect an active local network interface. Please specify a CIDR range manually.",

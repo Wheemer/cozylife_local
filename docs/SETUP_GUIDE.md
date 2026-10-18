@@ -103,7 +103,6 @@ Settings ➔ Devices & Services ➔ + Add Integration ➔ CozyLife Local
     *   *Enter a single IP* (e.g., `192.168.1.144`) to add that specific device directly.
 *   **Network CIDR (Optional)**: The default is `auto` (which scans your Home Assistant instance's default network). You can override this to scan a specific subnet (e.g., `192.168.10.0/24`).
 *   **Sleeping temp/humidity sensor (Checkbox)**: Check this box **ONLY** if the IP you entered belongs to a battery-powered environmental sensor. (See [Sleeping Battery-Powered Sensors](#sleeping-battery-powered-sensors-temphumidity) below).
-*   **Skip validation (Developer Option)**: Enables advanced users and developers to add a device manually without verification. Great for remote environments or provisioning devices that are temporarily powered down.
 
 After setup, the integration exposes the configured local IP address as a diagnostic sensor on the Home Assistant device page. Use that visible IP when checking DHCP reservations, router firewall rules, or direct port `5555` connectivity.
 
