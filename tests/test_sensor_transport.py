@@ -245,3 +245,28 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     assert wifi_environment_sensor.is_environment_sensor
     assert not zigbee_environment_sensor.is_environment_sensor
     assert not appliance.supports_switch_entities
+
+
+def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:
+    """Keep entity capability assumptions anchored to bundled APK catalog data."""
+    _load_api()
+    from cozylife_local.discovery import get_model_info
+
+    expected_dpids = {
+        # APK light panels: relay, work mode, temperature/brightness controls,
+        # countdown, and normal timer.
+        "asdlks": {"1", "2", "3", "4", "13", "14"},
+        # APK RGB light panel: relay, mode, brightness, hue, and saturation.
+        "kilulk": {"1", "2", "4", "5", "6", "13", "14"},
+        # APK multi-gang electrical panel: local relay and gang controls.
+        "hjhjkk": {"1", "2", "3", "4", "5", "6", "7"},
+        # APK plug panel: relay, countdown/timer, plug options, and metering.
+        "hjk1jk": {"1", "2", "3", "18", "19"},
+        # Explicitly supported Wi-Fi temperature/humidity sensor.
+        "Z4tRml": {"4", "8", "9", "14", "24", "25"},
+    }
+
+    for pid, required in expected_dpids.items():
+        model = get_model_info(pid)
+        assert model is not None
+        assert required <= model.dpids, pid
