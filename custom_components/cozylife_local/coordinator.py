@@ -98,7 +98,8 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.device = device
         self._udp_discovery: CozyLifeUdpDiscovery | None = None
         self._sensor_probe_task: asyncio.Task[None] | None = None
-        if self._uses_sensor_polling:
+        self._identity_refresh_task: asyncio.Task[None] | None = None
+        if self._uses_sensor_polling and self._sensor_probe_task is None:
             # A waking unit answers its local TCP request immediately. Limit
             # each failed attempt so a sleeping unit cannot delay the next
             # wake-window probe.
@@ -156,6 +157,52 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
         await self.async_request_refresh()
 
+    async def _async_promote_sensor_identity(self) -> None:
+        """Replace a sleeping-sensor setup ID after a verified local handshake.
+
+        Manual sleeping-sensor setup intentionally works while the device is
+        unavailable, so it starts with an entry-local placeholder ID. A UDP
+        reply contains the device's real ID and cannot match that placeholder.
+        Once a report proves the device is awake, read and verify the actual
+        ID over its local TCP connection before using it for UDP discovery.
+        """
+        try:
+            expected_pid = self._entry.data.get("pid")
+            if not await self.device.async_update_device_info():
+                return
+            if self.device.pid != expected_pid:
+                _LOGGER.warning(
+                    "Ignoring local identity from %s: expected PID %s, got %s",
+                    self.device.ip_address,
+                    expected_pid,
+                    self.device.pid,
+                )
+                return
+
+            device_id = self.device.device_id
+            if not device_id or device_id == self._entry.data.get("device_id"):
+                return
+
+            data = {
+                **self._entry.data,
+                "device_id": device_id,
+                "device_type_code": self.device.device_type_code,
+            }
+            if self.device.dpid:
+                data["dpids"] = self.device.dpid
+            self.hass.config_entries.async_update_entry(self._entry, data=data)
+
+            if self._udp_discovery:
+                await self._udp_discovery.async_stop()
+                self._udp_discovery = None
+            await self.async_start_discovery()
+            _LOGGER.info(
+                "Verified local device ID for sleeping CozyLife sensor at %s",
+                self.device.ip_address,
+            )
+        finally:
+            self._identity_refresh_task = None
+
     @property
     def is_sensor(self) -> bool:
         return self._uses_sensor_polling
@@ -172,6 +219,13 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except asyncio.CancelledError:
                 pass
             self._sensor_probe_task = None
+        if self._identity_refresh_task:
+            self._identity_refresh_task.cancel()
+            try:
+                await self._identity_refresh_task
+            except asyncio.CancelledError:
+                pass
+            self._identity_refresh_task = None
         await self.device.async_close()
 
     async def _async_handle_device_message(self, frame: dict[str, Any]) -> None:
@@ -191,6 +245,14 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         self.async_set_updated_data(state_data)
+        if (
+            self._entry.data.get("device_id", "").startswith("sleeping_sensor_")
+            and self._identity_refresh_task is None
+        ):
+            self._identity_refresh_task = self.hass.async_create_background_task(
+                self._async_promote_sensor_identity(),
+                "cozylife sensor identity verification",
+            )
         _LOGGER.debug(
             "[COZYLIFE] Received sensor report from persistent socket %s: %s",
             self.device.ip_address,

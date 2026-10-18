@@ -336,3 +336,70 @@ def test_environment_report_accepts_a_valid_partial_measurement() -> None:
     assert coordinator._has_valid_environment_measurements({"4": 48})
     assert not coordinator._has_valid_environment_measurements({"8": 0})
     assert not coordinator._has_valid_environment_measurements({"4": 0})
+
+
+def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
+    """A provisional setup ID is replaced only by a matching local handshake."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        coordinator = object.__new__(CozyLifeCoordinator)
+        entry = types.SimpleNamespace(
+            data={
+                "device_id": "sleeping_sensor_Z4tRml_10.0.0.115",
+                "pid": "Z4tRml",
+                "device_type_code": "03",
+                "dpids": ["4", "8", "9"],
+            }
+        )
+        updates: list[dict] = []
+
+        def update_entry(updated_entry, *, data) -> None:
+            updated_entry.data = data
+            updates.append(data)
+
+        coordinator.hass = types.SimpleNamespace(
+            config_entries=types.SimpleNamespace(async_update_entry=update_entry)
+        )
+        coordinator._entry = entry
+        coordinator.device = types.SimpleNamespace(
+            ip_address="10.0.0.115",
+            pid="Z4tRml",
+            device_id="76608860c4d7fdd94485",
+            device_type_code="02",
+            dpid=["4", "8", "9", "14"],
+        )
+
+        async def update_device_info() -> bool:
+            return True
+
+        coordinator.device.async_update_device_info = update_device_info
+        stopped: list[bool] = []
+
+        async def stop() -> None:
+            stopped.append(True)
+
+        coordinator._udp_discovery = types.SimpleNamespace(async_stop=stop)
+        restarted: list[bool] = []
+
+        async def start_discovery() -> None:
+            restarted.append(True)
+
+        coordinator.async_start_discovery = start_discovery
+        coordinator._identity_refresh_task = object()
+
+        await coordinator._async_promote_sensor_identity()
+
+        assert updates == [
+            {
+                "device_id": "76608860c4d7fdd94485",
+                "pid": "Z4tRml",
+                "device_type_code": "02",
+                "dpids": ["4", "8", "9", "14"],
+            }
+        ]
+        assert stopped == [True]
+        assert restarted == [True]
+        assert coordinator._identity_refresh_task is None
+
+    asyncio.run(exercise())
