@@ -10,9 +10,7 @@
           "sleeping_sensor": "Sleeping temp/humidity sensor",
           "skip_validation": "Skip validation (Developer Mode)",
           "min_kelvin": "Minimum Kelvin (Warm White)",
-          "max_kelvin": "Maximum Kelvin (Cool White)",
-          "experimental_short_interval": "Enable experimental short sensor intervals",
-          "report_interval": "Sensor report interval (seconds)"
+          "max_kelvin": "Maximum Kelvin (Cool White)"
         },
         "data_description": {
           "ip_address": "Static IP address of your device (e.g. 192.168.1.150). Recommended to set a DHCP reservation in your router.",
@@ -20,9 +18,7 @@
           "sleeping_sensor": "Check this ONLY for battery-powered sensors. Caches metadata so Home Assistant builds entities without waiting for the sleeping hardware to wake up.",
           "skip_validation": "Skip active network handshake. Recommended only for remote environments, mock tests, or when adding an offline device.",
           "min_kelvin": "The warmest light color temperature supported by your bulb hardware (typical range: 2000K to 2700K).",
-          "max_kelvin": "The coolest light color temperature supported by your bulb hardware (typical range: 5000K to 6500K).",
-          "experimental_short_interval": "Allow 600s / 10m updates on compatible sleeping-sensor firmware. The standard firmware interval is 1800s / 30m. Some wake cycles may still fall back to 1800s.",
-          "report_interval": "Interval at which the environment sensor wakes and transmits readings. Standard mode uses at least 1800s / 30m. Experimental mode allows 600s / 10m, with occasional firmware fallback to 1800s."
+          "max_kelvin": "The coolest light color temperature supported by your bulb hardware (typical range: 5000K to 6500K)."
         }
       },
       "select_device": {
@@ -53,22 +49,14 @@
     "step": {
       "init": {
         "title": "CozyLife Device Options",
-        "description": "Tune local parameters, report windows, and logging options for this CozyLife device.",
+        "description": "Tune local parameters and logging options for this CozyLife device.",
         "data": {
           "enable_debug": "Enable verbose integration debug logs",
-          "experimental_short_interval": "Enable experimental short sensor intervals",
-          "humidity_sensitivity": "Humidity reporting sensitivity threshold",
           "max_kelvin": "Maximum Kelvin (Cool White)",
-          "min_kelvin": "Minimum Kelvin (Warm White)",
-          "report_interval": "Sensor polling window (seconds)",
-          "temp_sensitivity": "Temperature reporting sensitivity threshold"
+          "min_kelvin": "Minimum Kelvin (Warm White)"
         },
         "data_description": {
           "enable_debug": "Streams complete local packet handshakes to Home Assistant logs. Extremely helpful for troubleshooting unrecognized device models.",
-          "experimental_short_interval": "Allow 600s / 10m updates on compatible sleeping-sensor firmware. The standard firmware interval is 1800s / 30m. Some wake cycles may still fall back to 1800s.",
-          "humidity_sensitivity": "Only report humidity updates when the value shifts by this threshold (5 represents 0.5% humidity delta).",
-          "temp_sensitivity": "Only report temperature updates when the value shifts by this threshold (5 represents 0.5°C temperature delta).",
-          "report_interval": "The wake interval in seconds for environmental sensors. Standard mode uses at least 1800s / 30m. Experimental mode allows 600s / 10m, with occasional firmware fallback to 1800s.",
           "min_kelvin": "Adjust the warmest color temperature limit (Kelvin) for this light bulb.",
           "max_kelvin": "Adjust the coolest color temperature limit (Kelvin) for this light bulb."
         }
