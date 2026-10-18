@@ -35,20 +35,6 @@ _LOGGER = logging.getLogger(__name__)
 _MODEL_PATH = Path(__file__).with_name("model.json")
 _METERING_DPIDS = {PLUG_ENERGY, PLUG_CURRENT, PLUG_POWER, PLUG_VOLTAGE}
 _SWITCH_GANG_DPIDS = ("2", "4", "6", "8", "10", "12", "14", "16")
-_OUTLET_NAME_MARKERS = ("plug", "socket", "outlet", "插座", "插板")
-_SWITCH_NAME_MARKERS = (
-    "plug",
-    "socket",
-    "outlet",
-    "switch",
-    "gang",
-    "way",
-    "插座",
-    "插板",
-    "开关",
-)
-_GENERIC_POWER_TYPE_CODES = {"05", "19"}
-_GENERIC_POWER_EXCLUDED_NAMES = ("doorbell", "detection", "tire pressure", "门铃")
 _NAMED_GANG_COUNTS = {
     "one": 1,
     "two": 2,
@@ -152,32 +138,6 @@ def get_model_info(pid: str | None) -> ModelInfo | None:
     return _load_model_catalog().get(pid)
 
 
-def _is_outlet_name(name: str | None) -> bool:
-    if not name:
-        return False
-    lower_name = name.lower()
-    return any(marker in lower_name for marker in _OUTLET_NAME_MARKERS)
-
-
-def _is_switch_name(name: str | None) -> bool:
-    if not name:
-        return False
-    lower_name = name.lower()
-    return any(marker in lower_name for marker in _SWITCH_NAME_MARKERS)
-
-
-def _is_generic_power_device(model_info: ModelInfo | None) -> bool:
-    if not model_info or model_info.type_code not in _GENERIC_POWER_TYPE_CODES:
-        return False
-    lower_name = (model_info.model_name or "").lower()
-    if any(marker in lower_name for marker in _GENERIC_POWER_EXCLUDED_NAMES):
-        return False
-
-    return _is_switch_name(model_info.model_name) or bool(
-        _METERING_DPIDS & model_info.dpids
-    )
-
-
 def _count_from_model_name(name: str | None) -> int | None:
     if not name:
         return None
@@ -242,8 +202,8 @@ def classify_device(
 
     is_known_motor = bool(model_info and model_info.type_name.lower() == "motor")
     is_sensor_category = bool(model_info and model_info.type_name.lower() == "sensor")
-    is_outlet = bool(model_info and _is_outlet_name(model_info.model_name))
-    is_generic_power_device = _is_generic_power_device(model_info)
+    is_outlet = False
+    is_generic_power_device = False
     has_light_capability = (
         TEMP in dpid_set
         or BRIGHT in dpid_set
@@ -275,11 +235,9 @@ def classify_device(
         and SWITCH in dpid_set
         and not is_known_motor
         and not (is_light and has_light_capability)
-        and (is_switch or is_generic_power_device)
+        and is_switch
     )
-    switch_entity_count = 1 if (
-        is_generic_power_device and supports_switch_entities
-    ) else (
+    switch_entity_count = (
         detect_switch_entity_count(dpid_set, model_name)
         if supports_switch_entities
         else 0
