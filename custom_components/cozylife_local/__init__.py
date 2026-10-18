@@ -88,7 +88,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        coordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        await coordinator.device.async_close()
         active_entries = [
             key for key in hass.data[DOMAIN] if key != SCHEDULE_MANAGER
         ]
