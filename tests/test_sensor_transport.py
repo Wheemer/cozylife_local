@@ -237,13 +237,17 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     known_light = classify_device("asdlks", "01", ["1", "2", "3", "4"])
     catalog_only_light = classify_device("kpfzBm", "01", [])
     wifi_environment_sensor = classify_device("Z4tRml", "03", ["4", "8", "9"])
+    another_wifi_environment_sensor = classify_device("s1AxFq", "03", ["4", "8", "9"])
     zigbee_environment_sensor = classify_device("v2kv9f", "03", ["8", "9"])
+    bluetooth_environment_sensor = classify_device("bQ2cGF", "03", ["4", "8", "9"])
     appliance = classify_device("CJjAvl", "05", ["1"])
 
     assert known_light.is_light
     assert not catalog_only_light.is_light
     assert wifi_environment_sensor.is_environment_sensor
+    assert another_wifi_environment_sensor.is_environment_sensor
     assert not zigbee_environment_sensor.is_environment_sensor
+    assert not bluetooth_environment_sensor.is_environment_sensor
     assert not appliance.supports_switch_entities
 
 

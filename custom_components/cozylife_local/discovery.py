@@ -24,6 +24,7 @@ from .const import (
     RGB_LIGHT_TYPE_CODE,
     SAT,
     SENSOR_BATTERY,
+    SENSOR_HUMIDITY,
     SENSOR_TEMPERATURE,
     SWITCH,
     SWITCH_TYPE_CODE,
@@ -61,6 +62,7 @@ class ModelInfo:
 
     product_id: str
     type_code: str
+    network_type: str
     type_name: str
     model_name: str | None
     dpids: frozenset[str]
@@ -114,6 +116,7 @@ def _load_model_catalog() -> dict[str, ModelInfo]:
             catalog[str(product_id)] = ModelInfo(
                 product_id=str(product_id),
                 type_code=type_code,
+                network_type=str(model.get("net") or ""),
                 type_name=type_name,
                 model_name=(
                     model.get("device_model_name_en")
@@ -187,11 +190,19 @@ def classify_device(
     model_info = get_model_info(pid)
     model_name = model_info.model_name if model_info else None
 
-    # Sensor category ``03`` includes Zigbee/BLE products.  This integration
-    # speaks the Wi-Fi TCP protocol only, so opt into sleeping-sensor handling
-    # for a positively identified Wi-Fi PID rather than guessing from reused
-    # temperature and battery DPIDs.
-    is_environment_sensor = pid in KNOWN_SENSOR_PIDS
+    # Sensor category ``03`` contains Wi-Fi, Bluetooth, and Zigbee products.
+    # The APK catalog identifies the Wi-Fi family as network type ``02``.
+    # Require its complete temperature/humidity/battery profile as well, so
+    # reused sensor DPIDs alone cannot promote another transport into this
+    # integration. Retain the known PID as an offline-catalog fallback.
+    is_environment_sensor = (
+        pid in KNOWN_SENSOR_PIDS
+        or (
+            model_info is not None
+            and model_info.network_type == "02"
+            and {SENSOR_HUMIDITY, SENSOR_TEMPERATURE, SENSOR_BATTERY} <= dpid_set
+        )
+    )
 
     if model_info:
         effective_type_code = model_info.type_code
