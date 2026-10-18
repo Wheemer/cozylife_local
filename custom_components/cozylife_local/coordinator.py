@@ -243,11 +243,11 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return sanitized
 
     def _has_valid_environment_measurements(self, state_data: dict[str, Any]) -> bool:
-        """Return whether state data contains usable temperature and humidity."""
+        """Return whether a report contains at least one usable measurement."""
         if not self.classification.is_environment_sensor:
             return True
 
-        return all(
+        return any(
             _is_valid_environment_measurement(
                 dpid,
                 state_data.get(dpid),
