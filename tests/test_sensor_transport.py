@@ -415,6 +415,7 @@ def test_sleeping_sensor_rejects_a_mismatched_local_identity() -> None:
             data={
                 "device_id": "sleeping_sensor_Z4tRml_10.0.0.115",
                 "pid": "Z4tRml",
+                "device_type_code": "03",
                 "dpids": ["4", "8", "9"],
             }
         )
@@ -437,13 +438,29 @@ def test_sleeping_sensor_rejects_a_mismatched_local_identity() -> None:
             return True
 
         coordinator.device.async_update_device_info = update_device_info
+        closed: list[bool] = []
+
+        async def close() -> None:
+            closed.append(True)
+
+        def restore_from_cache(device_id, pid, device_type_code, dpids) -> None:
+            coordinator.device.device_id = device_id
+            coordinator.device.pid = pid
+            coordinator.device.device_type_code = device_type_code
+            coordinator.device.dpid = dpids
+
+        coordinator.device.async_close = close
+        coordinator.device.restore_from_cache = restore_from_cache
         coordinator._udp_discovery = None
         coordinator._identity_refresh_task = object()
 
         await coordinator._async_promote_sensor_identity()
 
         assert updates == []
+        assert closed == [True]
         assert entry.data["device_id"] == "sleeping_sensor_Z4tRml_10.0.0.115"
+        assert coordinator.device.pid == "Z4tRml"
+        assert coordinator.device.dpid == ["4", "8", "9"]
         assert coordinator._identity_refresh_task is None
 
     asyncio.run(exercise())

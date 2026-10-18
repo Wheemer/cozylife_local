@@ -177,6 +177,17 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     expected_pid,
                     self.device.pid,
                 )
+                await self.device.async_close()
+                cached_device_id = self._entry.data.get("device_id")
+                cached_type_code = self._entry.data.get("device_type_code")
+                cached_dpids = self._entry.data.get("dpids")
+                if cached_device_id and cached_type_code and cached_dpids:
+                    self.device.restore_from_cache(
+                        cached_device_id,
+                        expected_pid,
+                        cached_type_code,
+                        [str(dpid) for dpid in cached_dpids],
+                    )
                 return
 
             device_id = self.device.device_id
