@@ -336,7 +336,6 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         data_schema=DATA_SCHEMA,
                         errors={"base": "unsupported_transport"},
                     )
-                is_sensor = classification.is_environment_sensor
                 is_light = classification.is_light
                 if is_light:
                     model_min_kelvin, model_max_kelvin = _kelvin_range_for_pid(device.pid)
@@ -353,9 +352,6 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 # If this is a light and kelvin fields weren't provided yet, re-show with light schema
                 if is_light and "min_kelvin" not in user_input:
-                    self._ip_address = ip_address
-                    self._device_id = device.device_id
-                    self._device_model_name = device.device_model_name
                     return self.async_show_form(
                         step_id="user",
                         data_schema=_device_schema_light(ip_address, device.pid),
