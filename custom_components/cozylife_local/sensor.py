@@ -46,7 +46,10 @@ async def async_setup_entry(
     """Set up CozyLife sensor platform."""
     coordinator: CozyLifeCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    if not coordinator.device.dpid:
+    if (
+        not coordinator.classification.is_local_transport
+        or not coordinator.device.dpid
+    ):
         return
 
     entities = [CozyLifeIPAddressSensor(coordinator)]

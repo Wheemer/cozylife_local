@@ -39,6 +39,7 @@
       "no_devices_found": "No online CozyLife devices were detected on the network. Check your device's power, Wi-Fi connection, and ensure it is on the same subnet as Home Assistant.",
       "no_network": "Home Assistant could not automatically detect an active local network interface. Please specify a CIDR range manually.",
       "timeout_connect": "The connection attempt to the device timed out. Check network response times or router settings.",
+      "unsupported_transport": "This model is catalogued as Bluetooth or Zigbee, not a Wi-Fi local-TCP device. CozyLife Local cannot communicate with it.",
       "unknown": "An unexpected system error occurred during device handshake. Please check your Home Assistant system logs."
     },
     "abort": {

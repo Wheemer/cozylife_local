@@ -361,6 +361,12 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 dpids = device.dpid or []
                 classification = classify_device(device.pid, device.device_type_code, dpids)
+                if not classification.is_local_transport:
+                    return self.async_show_form(
+                        step_id="user",
+                        data_schema=DATA_SCHEMA,
+                        errors={"base": "unsupported_transport"},
+                    )
                 is_sensor = classification.is_environment_sensor
                 is_light = classification.is_light
                 if is_light:
