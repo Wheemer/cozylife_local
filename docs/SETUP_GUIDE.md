@@ -125,7 +125,7 @@ Multi-gang devices (such as double or triple rocker wall switches) share a singl
 
 Our integration supports both standard on/off plugs and high-end smart plugs equipped with electricity metering chips.
 
-*   **Metered Plugs**: If the device catalog or DPID response reports DPIDs `26` through `29`, the integration will automatically expose:
+*   **Metered Plugs**: If the device's local DPID response reports DPIDs `26` through `29`, the integration will automatically expose:
     *   **Voltage** (V) - `sensor.cozylife_device_voltage`
     *   **Current** (mA) - `sensor.cozylife_device_current`
     *   **Active Power** (W) - `sensor.cozylife_device_power`
@@ -159,9 +159,9 @@ The integration keeps the APK-derived local status transport available for valid
 If you have completed setup but your devices keep dropping off or showing as `Unavailable`, review these network settings:
 
 *   **AP Isolation (Client Isolation)**: Some routers have a security feature called "Access Point Isolation" or "Wireless Client Isolation" enabled. This prevents Wi-Fi devices from talking directly to each other or to your Home Assistant server. **Ensure this setting is DISABLED** in your router's wireless options.
-*   **IGMP Snooping / Multicast**: CozyLife uses UDP multicast broadcasts for auto-discovery. Ensure IGMP Snooping is enabled on your router and network switches to allow local multicast packets to traverse from Wi-Fi to Ethernet seamlessly.
-*   **Port 5555**: The CozyLife protocol uses UDP/TCP port `5555`. Ensure that no internal firewalls or parent router rules are blocking traffic on this port between your Home Assistant IP and the device IP range.
-*   **IP Ping Test**: If a device is unavailable, open a Terminal/SSH in Home Assistant and run `ping <device_ip>`. If you get no response, the device has either lost power, changed IP address, or is disconnected from the Wi-Fi.
+*   **UDP Discovery Broadcasts**: CozyLife discovery sends UDP broadcasts to port `6095`. If discovery does not find a device, confirm that broadcasts can cross the relevant LAN segment; direct setup can use the device's known IP instead.
+*   **TCP Port 5555**: Local device status and control use TCP port `5555`. Ensure that no internal firewall or parent-router rule blocks traffic between Home Assistant and the device IP range.
+*   **IP Ping Test**: A successful ping can confirm basic reachability, but a failed ping does not prove a CozyLife device is offline: devices may ignore ICMP and battery sensors can sleep between reports.
 
 ## 6. Analyzing Discovery Logs & Submitting New Models
 

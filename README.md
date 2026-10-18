@@ -45,12 +45,12 @@ We are still looking for reports to expand coverage for:
 
 ## Key Features
 
-*   ⚡ **100% Local Control**: Zero reliance on the CozyLife cloud. All control commands and sensor polling happen locally over your Wi-Fi network, ensuring maximum security, privacy, and ultra-low latency.
+*   ⚡ **100% Local Control**: Zero reliance on the CozyLife cloud. All control commands and sensor status requests happen locally over your Wi-Fi network.
 *   🔌 **Auto-Discovery Scanner**: Instantly scans your local IPv4 subnet (supports customizable CIDR, e.g. `192.168.1.0/24`) and displays the number of active CozyLife devices on the network.
 *   📍 **Static IP & Sleep Sensor Modes**: Easily provision devices individually via single static IP addresses. Includes a specialized "Sleeping temp/humidity sensor" mode that leverages cached metadata to safely pre-build battery-powered entities before the hardware wakes.
 *   🧭 **Visible Device IP Diagnostics**: Exposes each configured device's local IP address as a diagnostic sensor in Home Assistant, making router checks and troubleshooting easier.
 *   🎛️ **Multi-Gang Switch Bitmasks**: Native, low-level bitmask control on DPID 1 ensures multi-gang rockers (e.g., double or triple rocker switches) act as individual, responsive entities.
-*   🧩 **Switch Option Controls**: Exposes catalog-backed Power-on State, LED Status, and overcurrent protection controls where the device reports the required DPIDs.
+*   🧩 **Switch Option Controls**: Exposes Power-on State, LED Status, and overcurrent protection controls only where the individual device reports the required DPIDs.
 *   📈 **Smart Energy Metering**: Exposes voltage, current, active power, and cumulative energy sensors (compatible with the HA Energy Dashboard), plus supported countdown and plug option controls.
 *   💡 **State & Color-Mode Safeguards**: Smooth transitions and automatic work-mode state preservation prevents smart lights from glitching or flashing dark blue during custom RGB commands.
 *   🕒 **Light Countdowns**: Exposes validated local countdown controls on compatible bulbs.
@@ -102,7 +102,7 @@ Battery-powered environment sensors spend most of their time asleep. CozyLife Lo
 
 Multi-gang wall switches use `DPID 1` as a bitmask. Home Assistant exposes each gang as its own switch entity while preserving one local device connection.
 
-Some wall switches also advertise hidden option DPIDs in the bundled catalog. When available, CozyLife Local exposes:
+When a wall switch reports the required option DPIDs, CozyLife Local exposes:
 
 *   **Power-on State** (`DPID 18`)
 *   **LED Status** (`DPID 19`)
@@ -138,17 +138,16 @@ CozyLife devices report their functionalities via standard Data Point IDs (DPIDs
 | DPID | Target Function | Description |
 |------|-----------------|-------------|
 | `1` | Power / Switch Bitmask | Master light power, plug power, or multi-gang rocker state bitmask. |
-| `2` | Work Mode / Countdown | Light profile settings on bulbs; gang-1 timer/countdown on switches. |
-| `3` | Color Temperature / Device Timer | White light warmth control on lights; device-specific timer data on compatible electrical products. |
-| `4` | Brightness / Humidity | Light intensity scaling, relative humidity levels on sensors, or gang-2 timers. |
+| `2` | Work Mode / Plug Countdown | Light profile settings on bulbs or the countdown control on compatible plugs. |
+| `3` | Color Temperature | White light warmth control on compatible lights. |
+| `4` | Brightness / Humidity | Light intensity scaling on compatible lights or relative humidity on sensors. |
 | `5` | Hue | 360-degree color hue control on addressable RGB lights. |
 | `6` | Saturation | Color saturation percentage on RGB lights. |
-| `7` | Contact / Color Mode | Door/window magnetic contact sensor; secondary color spectrum mapping. |
-| `8` | Temperature / Scene | Temperature sensor data (Celsius); pre-programmed lighting presets. |
+| `7` | Contact | Door/window magnetic contact sensor state. |
+| `8` | Temperature | Temperature sensor data in Celsius. |
 | `9` | Battery Level | Exposes remaining battery charge on supported portable sensors. |
 | `10` | Moisture Status | Water-leak detection and alarm sensor. |
 | `13` | Light Countdown | Countdown seconds on compatible lights. |
-| `14` | Light Timer Data | Device-specific timer data on compatible lights. |
 | `18` | Power-on State | Relay restore behavior after power loss on compatible plugs and wall switches. |
 | `19` | LED Status | Indicator LED behavior on compatible plugs and wall switches. |
 | `26` | Cumulative Energy (kWh)| Exposes total energy consumption, fully compatible with HA Energy Dashboard. |
