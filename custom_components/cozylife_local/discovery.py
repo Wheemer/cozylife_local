@@ -76,6 +76,7 @@ class DeviceClassification:
     device_type_code: str | None
     effective_type_code: str | None
     source: str
+    is_local_transport: bool
     is_environment_sensor: bool
     is_sensor_category: bool
     is_light: bool
@@ -205,17 +206,29 @@ def classify_device(
     model_info = get_model_info(pid)
     model_name = model_info.model_name if model_info else None
 
+    # The bundled APK catalog explicitly identifies ``01`` sensor products as
+    # Bluetooth and ``04`` products as Zigbee.  Neither can use this local
+    # TCP/UDP transport.  Keep unknown catalog values eligible so a catalog
+    # metadata gap cannot make an already-working local device disappear.
+    is_local_transport = (
+        model_info is None or model_info.network_type not in {"01", "04"}
+    )
+
     # Sensor category ``03`` contains Wi-Fi, Bluetooth, and Zigbee products.
     # The APK catalog identifies the Wi-Fi family as network type ``02``.
     # Require its complete temperature/humidity/battery profile as well, so
     # reused sensor DPIDs alone cannot promote another transport into this
     # integration. Retain the known PID as an offline-catalog fallback.
     is_environment_sensor = (
-        pid in KNOWN_SENSOR_PIDS
-        or (
-            model_info is not None
-            and model_info.network_type == "02"
-            and {SENSOR_HUMIDITY, SENSOR_TEMPERATURE, SENSOR_BATTERY} <= dpid_set
+        is_local_transport
+        and (
+            pid in KNOWN_SENSOR_PIDS
+            or (
+                model_info is not None
+                and model_info.network_type == "02"
+                and {SENSOR_HUMIDITY, SENSOR_TEMPERATURE, SENSOR_BATTERY}
+                <= dpid_set
+            )
         )
     )
 
@@ -239,7 +252,8 @@ def classify_device(
     # Legacy compatibility: some existing RGB lights report type 02. Only use
     # that fallback when the device also exposes light capability DPIDs.
     is_light = (
-        not is_environment_sensor
+        is_local_transport
+        and not is_environment_sensor
         and SWITCH in dpid_set
         and (
             effective_type_code == LIGHT_TYPE_CODE
@@ -252,7 +266,8 @@ def classify_device(
     )
 
     is_switch = (
-        not is_environment_sensor
+        is_local_transport
+        and not is_environment_sensor
         and effective_type_code == SWITCH_TYPE_CODE
     )
 
@@ -279,6 +294,7 @@ def classify_device(
         device_type_code=device_type_code,
         effective_type_code=effective_type_code,
         source=source,
+        is_local_transport=is_local_transport,
         is_environment_sensor=is_environment_sensor,
         is_sensor_category=is_sensor_category,
         is_light=is_light,

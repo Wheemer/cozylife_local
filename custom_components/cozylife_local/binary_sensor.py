@@ -25,16 +25,33 @@ class BinarySensorDescription:
     device_class: BinarySensorDeviceClass
 
 
+_WIFI_CONTACT_SENSOR_PIDS = frozenset(
+    {
+        # APK catalog, Sensor / Wi-Fi (net 02): Door Sensor and Door Magnet.
+        "kOTYxo",
+        "0iDvw9",
+        "mBRflp",
+        "GnOqhr",
+        "t7x7Uz",
+    }
+)
+_WIFI_WATER_SENSOR_PIDS = frozenset(
+    {
+        # APK catalog, Sensor / Wi-Fi (net 02): Water Leak Sensor.
+        "y9DaDw",
+    }
+)
+
+
 def _binary_sensor_descriptions(
-    model_name: str | None,
+    pid: str | None,
     dpids: list[str],
 ) -> list[BinarySensorDescription]:
-    """Return conservative binary sensor mappings for known CozyLife sensors."""
-    lower_name = (model_name or "").lower()
+    """Return binary mappings for catalogued local Wi-Fi sensor profiles."""
     dpid_set = set(dpids)
     descriptions: list[BinarySensorDescription] = []
 
-    if ("door" in lower_name or "magnet" in lower_name) and "7" in dpid_set:
+    if pid in _WIFI_CONTACT_SENSOR_PIDS and "7" in dpid_set:
         descriptions.append(
             BinarySensorDescription(
                 dpid="7",
@@ -44,43 +61,13 @@ def _binary_sensor_descriptions(
             )
         )
 
-    if "motion" in lower_name and "6" in dpid_set:
-        descriptions.append(
-            BinarySensorDescription(
-                dpid="6",
-                key="motion",
-                name="Motion",
-                device_class=BinarySensorDeviceClass.MOTION,
-            )
-        )
-
-    if "water" in lower_name and "10" in dpid_set:
+    if pid in _WIFI_WATER_SENSOR_PIDS and "10" in dpid_set:
         descriptions.append(
             BinarySensorDescription(
                 dpid="10",
                 key="moisture",
                 name="Moisture",
                 device_class=BinarySensorDeviceClass.MOISTURE,
-            )
-        )
-
-    if "smoke" in lower_name and "11" in dpid_set:
-        descriptions.append(
-            BinarySensorDescription(
-                dpid="11",
-                key="smoke",
-                name="Smoke",
-                device_class=BinarySensorDeviceClass.SMOKE,
-            )
-        )
-
-    if ("proximity" in lower_name or "radar" in lower_name) and "101" in dpid_set:
-        descriptions.append(
-            BinarySensorDescription(
-                dpid="101",
-                key="occupancy",
-                name="Occupancy",
-                device_class=BinarySensorDeviceClass.OCCUPANCY,
             )
         )
 
@@ -95,11 +82,14 @@ async def async_setup_entry(
     """Set up CozyLife binary sensor platform."""
     coordinator: CozyLifeCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    if not coordinator.device.dpid:
+    if (
+        not coordinator.classification.is_local_transport
+        or not coordinator.device.dpid
+    ):
         return
 
     descriptions = _binary_sensor_descriptions(
-        coordinator.classification.model_name or coordinator.device.device_model_name,
+        coordinator.device.pid,
         coordinator.device.dpid,
     )
     entities = [
