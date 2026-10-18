@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
 from .const import (
@@ -379,7 +379,7 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors["base"] = "timeout_connect"
         except ConnectionRefusedError:
             errors["base"] = "cannot_connect"
-        except Exception as e:
+        except Exception:
             _LOGGER.exception("Unexpected error during CozyLife device setup")
             errors["base"] = "unknown"
 
