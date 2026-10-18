@@ -49,7 +49,6 @@ PLATFORMS = [
     "binary_sensor",
     "number",
     "select",
-    "time",
 ]
 
 DEFAULT_MIN_KELVIN = 2000

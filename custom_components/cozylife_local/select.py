@@ -11,21 +11,10 @@ from .const import (
     DOMAIN,
     PLUG_LED_STATUS,
     PLUG_POWER_ON_STATE,
-    PLUG_TIMER_SCHEDULE,
 )
 from .coordinator import CozyLifeCoordinator
-from .schedule import (
-    ACTION_TURN_OFF,
-    ACTION_TURN_ON,
-    DEFAULT_SCHEDULE_ID,
-    SCHEDULE_MANAGER,
-    WEEKDAYS,
-    CozyLifeScheduleManager,
-)
 from .switch_options import (
     supported_dpids,
-    supports_light_schedule_options,
-    supports_schedule_options,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,19 +34,6 @@ LED_STATUS_OPTIONS = {
 }
 LED_STATUS_VALUES = {
     value: option for option, value in LED_STATUS_OPTIONS.items()
-}
-SCHEDULE_ACTION_OPTIONS = {
-    "Turn off": ACTION_TURN_OFF,
-    "Turn on": ACTION_TURN_ON,
-}
-SCHEDULE_ACTION_VALUES = {
-    value: option for option, value in SCHEDULE_ACTION_OPTIONS.items()
-}
-SCHEDULE_REPEAT_OPTIONS = {
-    "Once": [],
-    "Every day": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-    "Weekdays": ["mon", "tue", "wed", "thu", "fri"],
-    "Weekends": ["sat", "sun"],
 }
 
 
@@ -83,23 +59,6 @@ async def async_setup_entry(
             entities.append(CozyLifePowerOnStateSelect(coordinator))
         if PLUG_LED_STATUS in dpids:
             entities.append(CozyLifeLedStatusSelect(coordinator))
-        if supports_schedule_options(coordinator):
-            entities.extend(
-                [
-                    CozyLifePlugScheduleActionSelect(coordinator),
-                    CozyLifePlugScheduleRepeatSelect(coordinator),
-                ]
-            )
-
-    if coordinator.classification.is_light:
-        if supports_light_schedule_options(coordinator):
-            entities.extend(
-                [
-                    CozyLifeLightScheduleActionSelect(coordinator),
-                    CozyLifeLightScheduleRepeatSelect(coordinator),
-                ]
-            )
-
     if entities:
         async_add_entities(entities)
         return

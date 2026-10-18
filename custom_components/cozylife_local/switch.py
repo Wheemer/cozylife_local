@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, PLUG_OVERCURRENT_PROTECTION, PLUG_TIMER_SCHEDULE
+from .const import DOMAIN, PLUG_OVERCURRENT_PROTECTION
 from .coordinator import CozyLifeCoordinator
 from .schedule import (
     DEFAULT_SCHEDULE_ID,
@@ -17,8 +17,6 @@ from .schedule import (
 )
 from .switch_options import (
     supported_dpids,
-    supports_light_schedule_options,
-    supports_schedule_options,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,13 +37,9 @@ async def async_setup_entry(
         _LOGGER.error(f"Missing DPID list for {coordinator.device.ip_address}. Cannot set up switch.")
         return
 
-    if (
-        not coordinator.classification.supports_switch_entities
-        and not supports_light_schedule_options(coordinator)
-    ):
+    if not coordinator.classification.supports_switch_entities:
         _LOGGER.debug(
-            "Device %s (Type: %s, Source: %s) does not support switch entities "
-            "or light schedule options, "
+            "Device %s (Type: %s, Source: %s) does not support switch entities, "
             "skipping switch platform setup.",
             coordinator.device.ip_address,
             coordinator.classification.effective_type_code,
@@ -77,10 +71,6 @@ async def async_setup_entry(
     if coordinator.classification.supports_plug_metering:
         if PLUG_OVERCURRENT_PROTECTION in dpids:
             entities.append(CozyLifePlugBooleanSwitch(coordinator))
-    if supports_schedule_options(coordinator):
-        entities.append(CozyLifePlugScheduleEnabledSwitch(coordinator))
-    if supports_light_schedule_options(coordinator):
-        entities.append(CozyLifeLightScheduleEnabledSwitch(coordinator))
 
     if entities:
         async_add_entities(entities)
