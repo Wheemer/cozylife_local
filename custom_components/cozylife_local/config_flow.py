@@ -14,12 +14,6 @@ from .const import (
     DEFAULT_MAX_KELVIN,
     DEFAULT_MIN_KELVIN,
     LIGHT_KELVIN_RANGES,
-    SENSOR_BATTERY,
-    SENSOR_HUMIDITY,
-    SENSOR_HUMIDITY_SENSITIVITY_DPID,
-    SENSOR_REPORT_INTERVAL_DPID,
-    SENSOR_TEMPERATURE,
-    SENSOR_TEMP_SENSITIVITY_DPID,
     SENSOR_TYPE_CODE,
 )
 from .cozylife_api import CozyLifeDevice
@@ -47,15 +41,6 @@ DATA_SCHEMA = vol.Schema({
 })
 
 SLEEPING_SENSOR_PID = "Z4tRml"
-SLEEPING_SENSOR_DPIDS = [
-    SENSOR_HUMIDITY,
-    SENSOR_TEMPERATURE,
-    SENSOR_BATTERY,
-    SENSOR_REPORT_INTERVAL_DPID,
-    SENSOR_HUMIDITY_SENSITIVITY_DPID,
-    SENSOR_TEMP_SENSITIVITY_DPID,
-]
-
 def _kelvin_range_for_pid(pid: str | None) -> tuple[int, int]:
     """Return the default Kelvin range for a light model."""
     return LIGHT_KELVIN_RANGES.get(
