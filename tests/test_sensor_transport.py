@@ -403,3 +403,47 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
         assert coordinator._identity_refresh_task is None
 
     asyncio.run(exercise())
+
+
+def test_sleeping_sensor_rejects_a_mismatched_local_identity() -> None:
+    """A response from a different product must not replace the setup identity."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        coordinator = object.__new__(CozyLifeCoordinator)
+        entry = types.SimpleNamespace(
+            data={
+                "device_id": "sleeping_sensor_Z4tRml_10.0.0.115",
+                "pid": "Z4tRml",
+                "dpids": ["4", "8", "9"],
+            }
+        )
+        updates: list[dict] = []
+        coordinator.hass = types.SimpleNamespace(
+            config_entries=types.SimpleNamespace(
+                async_update_entry=lambda *_args, **kwargs: updates.append(kwargs)
+            )
+        )
+        coordinator._entry = entry
+        coordinator.device = types.SimpleNamespace(
+            ip_address="10.0.0.115",
+            pid="other-product",
+            device_id="other-device-id",
+            device_type_code="00",
+            dpid=["1"],
+        )
+
+        async def update_device_info() -> bool:
+            return True
+
+        coordinator.device.async_update_device_info = update_device_info
+        coordinator._udp_discovery = None
+        coordinator._identity_refresh_task = object()
+
+        await coordinator._async_promote_sensor_identity()
+
+        assert updates == []
+        assert entry.data["device_id"] == "sleeping_sensor_Z4tRml_10.0.0.115"
+        assert coordinator._identity_refresh_task is None
+
+    asyncio.run(exercise())
