@@ -67,6 +67,8 @@ def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None
                 b'{"cmd":2,"sn":"device-event","msg":{"data":{"4":48,"8":291}}}\r\n'
             )
             await writer.drain()
+            writer.close()
+            await writer.wait_closed()
 
         server = await asyncio.start_server(handler, "127.0.0.1", 5555)
         device = CozyLifeDevice("127.0.0.1", timeout=1.0)
@@ -98,6 +100,8 @@ def test_status_socket_is_recycled_on_the_configured_cadence() -> None:
             while await reader.readline():
                 writer.write(b'{"cmd":2,"sn":"report","msg":{"data":{"4":50}}}\r\n')
                 await writer.drain()
+            writer.close()
+            await writer.wait_closed()
 
         server = await asyncio.start_server(handler, "127.0.0.1", 5555)
         device = CozyLifeDevice("127.0.0.1", timeout=1.0)
@@ -124,11 +128,13 @@ def test_concurrent_status_requests_share_one_persistent_socket() -> None:
         connections = 0
         requests: list[dict] = []
 
-        async def handler(reader, _writer) -> None:
+        async def handler(reader, writer) -> None:
             nonlocal connections
             connections += 1
             for _ in range(2):
                 requests.append(json.loads((await reader.readline()).decode()))
+            writer.close()
+            await writer.wait_closed()
 
         server = await asyncio.start_server(handler, "127.0.0.1", 5555)
         device = CozyLifeDevice("127.0.0.1", timeout=1.0)
@@ -232,6 +238,8 @@ def test_persistent_transport_preserves_existing_info_state_and_set_commands() -
                 response = {"sn": request["sn"], "res": 0, "msg": message}
                 writer.write((json.dumps(response) + "\r\n").encode())
                 await writer.drain()
+            writer.close()
+            await writer.wait_closed()
 
         server = await asyncio.start_server(handler, "127.0.0.1", 5555)
         device = CozyLifeDevice("127.0.0.1", timeout=1.0)
