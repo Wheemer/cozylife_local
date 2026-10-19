@@ -338,6 +338,31 @@ def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:
         assert required <= model.dpids, pid
 
 
+def test_all_catalogued_wifi_electrical_relays_and_meters_get_local_entities() -> None:
+    """Keep every APK Wi-Fi electrical relay on the supported local path."""
+    _load_api()
+    from cozylife_local.discovery import _load_model_catalog, classify_device
+
+    electrical_models = [
+        model
+        for model in _load_model_catalog().values()
+        if model.type_code == "00" and model.network_type == "02"
+    ]
+    assert electrical_models
+
+    meter_dpids = {"26", "27", "28", "29"}
+    for model in electrical_models:
+        classification = classify_device(
+            model.product_id,
+            model.type_code,
+            model.dpids,
+        )
+        if "1" in model.dpids:
+            assert classification.supports_switch_entities, model.product_id
+        if meter_dpids & model.dpids:
+            assert classification.supports_plug_metering, model.product_id
+
+
 def test_manual_sensor_choices_include_only_apk_wifi_profiles() -> None:
     """Manual sleeping-sensor setup must not offer Bluetooth or Zigbee PIDs."""
     _load_api()
