@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          fetch-depth: 0
 
       - name: Install test runner
         run: python3 -m pip install --disable-pip-version-check pytest
@@ -28,10 +30,13 @@ jobs:
           manifest_version="$(jq -r '.version' custom_components/cozylife_local/manifest.json)"
           test "${tag}" != "${version}"
           test "${manifest_version}" = "${version}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
           if [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "prerelease=true" >> "${GITHUB_OUTPUT}"
+            echo "release_kind=prerelease" >> "${GITHUB_OUTPUT}"
           elif [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "prerelease=false" >> "${GITHUB_OUTPUT}"
+            echo "release_kind=stable release" >> "${GITHUB_OUTPUT}"
           else
             echo "Unsupported numeric release version: ${version}" >&2
             exit 1
@@ -50,8 +55,40 @@ jobs:
             -x "*.pyc" \
             -x "*/.DS_Store"
 
+      - name: Generate release notes
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_KIND: ${{ steps.version.outputs.release_kind }}
+        run: |
+          set -euo pipefail
+          previous_tag="$(git describe --tags --abbrev=0 "${GITHUB_SHA}^" 2>/dev/null || true)"
+          {
+            echo "## CozyLife Local ${RELEASE_VERSION}"
+            echo
+            echo "Automated ${RELEASE_KIND} built from the verified source tag."
+            echo
+            echo "### Install"
+            echo
+            echo "In HACS, open CozyLife Local, choose **Redownload**, select this version when prompted, then restart Home Assistant."
+            echo
+            echo "### Changes"
+            echo
+            if [ -n "${previous_tag}" ]; then
+              git log --format='- %s' --no-merges "${previous_tag}..${GITHUB_SHA}"
+            else
+              echo "- Initial automated release."
+            fi
+            echo
+            echo "### Validation"
+            echo
+            echo "- Regression tests and Python compilation passed before packaging."
+            echo "- The attached \`cozylife_local.zip\` is the HACS installation asset."
+          } > RELEASE_NOTES.md
+
       - name: Upload release asset
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: cozylife_local.zip
+          name: CozyLife Local ${{ steps.version.outputs.version }}
+          body_path: RELEASE_NOTES.md
           prerelease: ${{ steps.version.outputs.prerelease }}
