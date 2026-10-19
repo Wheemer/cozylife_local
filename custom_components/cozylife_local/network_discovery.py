@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
+import time
 from dataclasses import dataclass
 
 from homeassistant.core import HomeAssistant
 
-from .cozylife_api import COZYLIFE_PORT, CozyLifeDevice
+from .cozylife_api import (
+    COZYLIFE_PORT,
+    COZYLIFE_UDP_DISCOVERY_PORT,
+    CozyLifeDevice,
+)
 from .discovery import async_load_model_catalog
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,6 +25,7 @@ MAX_SCAN_HOSTS = 512
 SCAN_CONNECT_TIMEOUT = 0.75
 DEVICE_INFO_TIMEOUT = 1.5
 SCAN_CONCURRENCY = 64
+UDP_DISCOVERY_WINDOW_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,31 @@ class NoNetworkAvailable(ValueError):
     """Raised when no local IPv4 network can be detected."""
 
 
+class _ApkUdpDiscoveryProtocol(asyncio.DatagramProtocol):
+    """Collect the same UDP discovery replies that the Cozy Life APK caches."""
+
+    def __init__(self) -> None:
+        self.devices: dict[str, str] = {}
+
+    def datagram_received(self, data: bytes, _addr: tuple[str, int]) -> None:
+        """Store valid ``did``/``ip`` replies from a Cozy Life device."""
+        try:
+            frame = json.loads(data.decode("utf-8").split("\r\n", 1)[0])
+            message = frame["msg"]
+            device_id = message["did"]
+            ip_address = message["ip"]
+            if not isinstance(device_id, str) or not device_id:
+                return
+            if not isinstance(ip_address, str):
+                return
+            ipaddress.IPv4Address(ip_address)
+        except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            return
+
+        # The APK indexes this cache by device ID, replacing an older address.
+        self.devices[device_id] = ip_address
+
+
 async def async_discover_devices(
     hass: HomeAssistant,
     network_cidr: str = AUTO_NETWORK,
@@ -58,21 +90,84 @@ async def async_discover_devices(
     networks = await _async_get_scan_networks(hass, network_cidr)
     hosts = _hosts_for_networks(networks)
 
+    # The APK's first local-discovery operation is a UDP/6095 cmd-0 broadcast,
+    # not a TCP port sweep. A device that answers that broadcast is the app's
+    # positive proof that TCP/5555 is its local command endpoint, so query it
+    # directly without discarding it based on a preliminary TCP connect.
+    udp_addresses = await _async_discover_udp_addresses(networks)
+    udp_results = await asyncio.gather(
+        *(_async_query_discovered_host(ip_address) for ip_address in udp_addresses)
+    )
+
     semaphore = asyncio.Semaphore(SCAN_CONCURRENCY)
 
     async def scan_host(ip_address: str) -> DiscoveredDevice | None:
         async with semaphore:
             return await _async_discover_host(ip_address)
 
-    results = await asyncio.gather(*(scan_host(ip_address) for ip_address in hosts))
-    devices = [device for device in results if device is not None]
+    # Retain the historical TCP sweep as a fallback for products that do not
+    # answer their UDP discovery broadcast, but do not repeat probes for
+    # APK-confirmed addresses.
+    udp_address_set = set(udp_addresses)
+    tcp_results = await asyncio.gather(
+        *(scan_host(ip_address) for ip_address in hosts if ip_address not in udp_address_set)
+    )
+    devices_by_id_or_address: dict[str, DiscoveredDevice] = {}
+    for device in (*udp_results, *tcp_results):
+        if device is not None:
+            devices_by_id_or_address[device.device_id or device.ip_address] = device
+    devices = list(devices_by_id_or_address.values())
     devices.sort(key=lambda device: tuple(int(part) for part in device.ip_address.split(".")))
     _LOGGER.info(
-        "CozyLife network discovery found %s device(s) on %s",
+        "CozyLife network discovery found %s device(s) on %s (%s APK UDP reply/replies)",
         len(devices),
         ", ".join(str(network) for network in networks),
+        len(udp_addresses),
     )
     return devices
+
+
+async def _async_discover_udp_addresses(
+    networks: list[ipaddress.IPv4Network],
+) -> list[str]:
+    """Discover local device addresses via the APK's UDP/6095 cmd-0 exchange."""
+    loop = asyncio.get_running_loop()
+    transport: asyncio.DatagramTransport | None = None
+    protocol: _ApkUdpDiscoveryProtocol | None = None
+    try:
+        transport, protocol = await loop.create_datagram_endpoint(
+            _ApkUdpDiscoveryProtocol,
+            local_addr=("0.0.0.0", 0),
+            allow_broadcast=True,
+        )
+        request = {
+            "cmd": 0,
+            "pv": 0,
+            "sn": str(int(time.time() * 1000)),
+            "msg": {},
+        }
+        transport.sendto(
+            (json.dumps(request, separators=(",", ":")) + "\r\n").encode(),
+            ("255.255.255.255", COZYLIFE_UDP_DISCOVERY_PORT),
+        )
+        await asyncio.sleep(UDP_DISCOVERY_WINDOW_SECONDS)
+    except OSError as err:
+        _LOGGER.debug("CozyLife UDP discovery was unavailable: %s", err)
+        return []
+    finally:
+        if transport is not None:
+            transport.close()
+
+    if protocol is None:
+        return []
+    return sorted(
+        {
+            address
+            for address in protocol.devices.values()
+            if any(ipaddress.IPv4Address(address) in network for network in networks)
+        },
+        key=lambda address: tuple(int(part) for part in address.split(".")),
+    )
 
 
 async def _async_get_scan_networks(
@@ -183,6 +278,12 @@ async def _async_discover_host(ip_address: str) -> DiscoveredDevice | None:
     """Return device details if the host speaks the CozyLife local protocol."""
     if not await _async_is_port_open(ip_address):
         return None
+
+    return await _async_query_discovered_host(ip_address)
+
+
+async def _async_query_discovered_host(ip_address: str) -> DiscoveredDevice | None:
+    """Read device details after the APK's discovery path identified its address."""
 
     device = CozyLifeDevice(ip_address, timeout=DEVICE_INFO_TIMEOUT)
     if not await device.async_update_device_info():

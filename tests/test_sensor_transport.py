@@ -216,6 +216,29 @@ def test_discovery_accepts_only_the_matching_device_and_valid_address() -> None:
     asyncio.run(exercise())
 
 
+def test_apk_udp_discovery_cache_keeps_valid_device_identity_and_address() -> None:
+    """The setup scanner accepts the APK's ``did``/``ip`` UDP reply shape."""
+    _load_api()
+    from cozylife_local.network_discovery import _ApkUdpDiscoveryProtocol
+
+    protocol = _ApkUdpDiscoveryProtocol()
+    protocol.datagram_received(
+        b'{"msg":{"did":"plug-1","ip":"10.0.0.41","pid":"hjk1jk","dtp":"05"}}\r\n',
+        ("10.0.0.41", 6095),
+    )
+    protocol.datagram_received(
+        b'{"msg":{"did":"plug-1","ip":"10.0.0.42"}}\r\n',
+        ("10.0.0.42", 6095),
+    )
+    protocol.datagram_received(
+        b'{"msg":{"did":"bad","ip":"not-an-address"}}\r\n',
+        ("10.0.0.99", 6095),
+    )
+
+    # Mirrors the APK cache: newer replies replace the older IP for the DID.
+    assert protocol.devices == {"plug-1": "10.0.0.42"}
+
+
 def test_persistent_transport_preserves_existing_info_state_and_set_commands() -> None:
     """The reader-based transport still supports ordinary light/switch calls."""
     CozyLifeDevice = _load_api()
