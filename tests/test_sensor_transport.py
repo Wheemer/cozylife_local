@@ -7,6 +7,7 @@ import json
 import sys
 import time
 import types
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -216,6 +217,84 @@ def test_discovery_accepts_only_the_matching_device_and_valid_address() -> None:
     asyncio.run(exercise())
 
 
+def test_apk_udp_discovery_cache_keeps_valid_device_identity_and_address() -> None:
+    """The setup scanner accepts the APK's ``did``/``ip`` UDP reply shape."""
+    _load_api()
+    from cozylife_local.network_discovery import _ApkUdpDiscoveryProtocol
+
+    protocol = _ApkUdpDiscoveryProtocol()
+    protocol.datagram_received(
+        b'{"msg":{"did":"plug-1","ip":"10.0.0.41","pid":"hjk1jk","dtp":"05"}}\r\n',
+        ("10.0.0.41", 6095),
+    )
+    protocol.datagram_received(
+        b'{"msg":{"did":"plug-1","ip":"10.0.0.42"}}\r\n',
+        ("10.0.0.42", 6095),
+    )
+    protocol.datagram_received(
+        b'{"msg":{"did":"bad","ip":"not-an-address"}}\r\n',
+        ("10.0.0.99", 6095),
+    )
+
+    # Mirrors the APK cache: newer replies replace the older IP for the DID.
+    assert protocol.devices == {"plug-1": "10.0.0.42"}
+
+
+def test_setup_discovery_sends_the_apk_udp_request_before_tcp_fallback() -> None:
+    """Automatic setup must emit the same UDP/6095 discovery frame as the APK."""
+    _load_api()
+    from cozylife_local import network_discovery
+
+    async def exercise() -> None:
+        sent: list[tuple[bytes, tuple[str, int]]] = []
+        sleeps: list[float] = []
+
+        class FakeTransport:
+            def sendto(self, data: bytes, address: tuple[str, int]) -> None:
+                sent.append((data, address))
+                protocol.datagram_received(
+                    b'{"msg":{"did":"metered-plug","ip":"10.0.0.41"}}\r\n',
+                    ("10.0.0.41", 6095),
+                )
+                protocol.datagram_received(
+                    b'{"msg":{"did":"outside","ip":"10.0.1.9"}}\r\n',
+                    ("10.0.1.9", 6095),
+                )
+
+            def close(self) -> None:
+                return None
+
+        class FakeLoop:
+            async def create_datagram_endpoint(self, factory, **_kwargs):
+                nonlocal protocol
+                protocol = factory()
+                return FakeTransport(), protocol
+
+        async def fake_sleep(delay: float) -> None:
+            sleeps.append(delay)
+
+        protocol = None
+        with (
+            patch.object(network_discovery.asyncio, "get_running_loop", return_value=FakeLoop()),
+            patch.object(network_discovery.asyncio, "sleep", fake_sleep),
+        ):
+            addresses = await network_discovery._async_discover_udp_addresses(
+                [network_discovery.ipaddress.ip_network("10.0.0.0/24")]
+            )
+
+        assert addresses == ["10.0.0.41"]
+        assert sleeps == [5.0]
+        assert sent[0][1] == ("255.255.255.255", 6095)
+        assert json.loads(sent[0][0].decode()) | {"sn": "ignored"} == {
+            "cmd": 0,
+            "pv": 0,
+            "sn": "ignored",
+            "msg": {},
+        }
+
+    asyncio.run(exercise())
+
+
 def test_persistent_transport_preserves_existing_info_state_and_set_commands() -> None:
     """The reader-based transport still supports ordinary light/switch calls."""
     CozyLifeDevice = _load_api()
@@ -313,6 +392,31 @@ def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:
         model = get_model_info(pid)
         assert model is not None
         assert required <= model.dpids, pid
+
+
+def test_all_catalogued_wifi_electrical_relays_and_meters_get_local_entities() -> None:
+    """Keep every APK Wi-Fi electrical relay on the supported local path."""
+    _load_api()
+    from cozylife_local.discovery import _load_model_catalog, classify_device
+
+    electrical_models = [
+        model
+        for model in _load_model_catalog().values()
+        if model.type_code == "00" and model.network_type == "02"
+    ]
+    assert electrical_models
+
+    meter_dpids = {"26", "27", "28", "29"}
+    for model in electrical_models:
+        classification = classify_device(
+            model.product_id,
+            model.type_code,
+            model.dpids,
+        )
+        if "1" in model.dpids:
+            assert classification.supports_switch_entities, model.product_id
+        if meter_dpids & model.dpids:
+            assert classification.supports_plug_metering, model.product_id
 
 
 def test_manual_sensor_choices_include_only_apk_wifi_profiles() -> None:

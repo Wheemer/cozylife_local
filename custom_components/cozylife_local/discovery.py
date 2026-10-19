@@ -26,6 +26,7 @@ from .const import (
     SENSOR_BATTERY,
     SENSOR_HUMIDITY,
     SENSOR_TEMPERATURE,
+    SENSOR_TYPE_CODE,
     SWITCH,
     SWITCH_TYPE_CODE,
     TEMP,
@@ -216,15 +217,17 @@ def classify_device(
 
     # Sensor category ``03`` contains Wi-Fi, Bluetooth, and Zigbee products.
     # The APK catalog identifies the Wi-Fi family as network type ``02``.
-    # Require its complete temperature/humidity/battery profile as well, so
-    # reused sensor DPIDs alone cannot promote another transport into this
-    # integration. Retain the known PID as an offline-catalog fallback.
+    # Require that sensor category as well as its complete
+    # temperature/humidity/battery profile: electrical products can reuse
+    # these DPIDs and must remain relay devices. Retain the known PID as an
+    # offline-catalog fallback.
     is_environment_sensor = (
         is_local_transport
         and (
             pid in KNOWN_SENSOR_PIDS
             or (
                 model_info is not None
+                and model_info.type_code == SENSOR_TYPE_CODE
                 and model_info.network_type == "02"
                 and {SENSOR_HUMIDITY, SENSOR_TEMPERATURE, SENSOR_BATTERY}
                 <= dpid_set
