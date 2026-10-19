@@ -1,4 +1,4 @@
-name: Update Model Catalog
+name: Propose Model Catalog Update
 
 on:
   schedule:
@@ -7,14 +7,15 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
-  update-model-release:
-    name: Update model.json and release
+  update-model-catalog:
+    name: Propose model.json update
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v4
         with:
           fetch-depth: 0
 
@@ -27,77 +28,18 @@ jobs:
             /tmp/model.json >/dev/null
           jq -S . /tmp/model.json > custom_components/cozylife_local/model.json
 
-      - name: Check for catalog changes
-        id: changes
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- custom_components/cozylife_local/model.json; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Bump integration patch version
-        if: steps.changes.outputs.changed == 'true'
-        id: version
-        run: |
-          set -euo pipefail
-          current_version="$(jq -r '.version' custom_components/cozylife_local/manifest.json)"
-          next_version="$(
-            python3 -c 'import re, sys; m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", sys.argv[1]); assert m, f"Unsupported manifest version: {sys.argv[1]}"; major, minor, patch = map(int, m.groups()); print(f"{major}.{minor}.{patch + 1}")' \
-              "$current_version"
-          )"
-          jq --arg version "$next_version" '.version = $version' \
-            custom_components/cozylife_local/manifest.json > /tmp/manifest.json
-          mv /tmp/manifest.json custom_components/cozylife_local/manifest.json
-          echo "version=$next_version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$next_version" >> "$GITHUB_OUTPUT"
-
-      - name: Commit catalog update
-        if: steps.changes.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add custom_components/cozylife_local/model.json \
-            custom_components/cozylife_local/manifest.json
-          git commit -m "Update CozyLife model catalog"
-
-      - name: Create release tag
-        if: steps.changes.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          tag="${{ steps.version.outputs.tag }}"
-          if git rev-parse "$tag" >/dev/null 2>&1; then
-            echo "Tag $tag already exists" >&2
-            exit 1
-          fi
-          git tag "$tag"
-
-      - name: Push commit and tag
-        if: steps.changes.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          git push origin HEAD
-          git push origin "${{ steps.version.outputs.tag }}"
-
-      - name: Build HACS release ZIP
-        if: steps.changes.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          zip -r cozylife_new.zip custom_components/cozylife_local \
-            -x "*/__pycache__/*" \
-            -x "*.pyc" \
-            -x "*/.DS_Store"
-
-      - name: Create GitHub release
-        if: steps.changes.outputs.changed == 'true'
-        uses: softprops/action-gh-release@v2
+      - name: Create or update model catalog pull request
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
-          files: cozylife_new.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: Update CozyLife model catalog
+          title: Update CozyLife model catalog
           body: |
-            Automated CozyLife model catalog update.
+            Automated catalog refresh from the Cozy Life model endpoint.
 
-            Source: https://api-us.doiting.com/api/v2/device_product/model?lang=en
+            This pull request intentionally does not bump the integration version
+            or create a release. Review the catalog change before merging and
+            decide the release version separately.
+          branch: automation/model-catalog
+          delete-branch: true
+          add-paths: custom_components/cozylife_local/model.json
