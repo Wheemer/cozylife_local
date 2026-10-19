@@ -21752,8 +21752,8 @@
             ],
             "ext": [],
             "g_u": "2021121815080062",
-            "i": "https://static-cf-cn.doiting.com/storage/images/f75583b39eefd4b7f3c5672ff1df35d8.png",
-            "m_n": "^NTS.*$",
+            "i": "https://static-cf-cn.doiting.com/storage/images/f5ea00756095e94ec173c3658d94cc2d.png",
+            "m_n": "^HTX-.*$",
             "mp": [
               {
                 "i": "https://static-cf-cn.doiting.com/storage/images/483391231fabe7297e5a9c284e46a45f.jpg",
@@ -21761,7 +21761,7 @@
                 "url": "2026052915410002"
               }
             ],
-            "n": "NTS AUTO",
+            "n": "Automotive Ambient Lighting Master",
             "net": "01",
             "p": "2",
             "p_c_d": null,
@@ -22274,6 +22274,35 @@
             "pid": "SMyw4R",
             "s": 0,
             "s_u": "2021062117130028"
+          },
+          {
+            "cl": [],
+            "dpid": [
+              1
+            ],
+            "ext": [
+              "4"
+            ],
+            "g_u": "2021121815080062",
+            "i": "https://static-cf-cn.doiting.com/storage/images/25f609dfb0112116f28e7393ceb729c3.png",
+            "m_n": "^HC-CozyLife-.{6}$",
+            "mp": [
+              {
+                "i": "https://static-cf-cn.doiting.com/storage/images/a53c15a2745081015fc6845c9cab7659.png",
+                "n": "",
+                "url": "2026101513300001"
+              }
+            ],
+            "n": "Car lights",
+            "net": "01",
+            "p": "2",
+            "p_c_d": null,
+            "p_p_p": "Placeholder",
+            "p_u": "",
+            "pa_u": "2025091815230001",
+            "pid": "yUnbvr",
+            "s": 0,
+            "s_u": "2026101513300001"
           }
         ],
         "n": "Light"
