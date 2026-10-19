@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,7 +14,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install test runner
+        run: python3 -m pip install --disable-pip-version-check pytest
+
+      - name: Validate release source
+        id: version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          manifest_version="$(jq -r '.version' custom_components/cozylife_local/manifest.json)"
+          test "${tag}" != "${version}"
+          test "${manifest_version}" = "${version}"
+          if [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=true" >> "${GITHUB_OUTPUT}"
+          elif [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "Unsupported numeric release version: ${version}" >&2
+            exit 1
+          fi
+
+      - name: Run regression tests
+        run: python3 -m pytest -q
+
+      - name: Compile integration
+        run: python3 -m compileall -q custom_components/cozylife_local
 
       - name: Build HACS release ZIP
         run: |
@@ -25,6 +51,7 @@ jobs:
             -x "*/.DS_Store"
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: cozylife_new.zip
+          prerelease: ${{ steps.version.outputs.prerelease }}
