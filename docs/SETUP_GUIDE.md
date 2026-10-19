@@ -103,7 +103,6 @@ Settings ➔ Devices & Services ➔ + Add Integration ➔ CozyLife Local
     *   *Enter a single IP* (e.g., `192.168.1.144`) to add that specific device directly.
 *   **Network CIDR (Optional)**: The default is `auto` (which scans your Home Assistant instance's default network). You can override this to scan a specific subnet (e.g., `192.168.10.0/24`).
 *   **Sleeping temp/humidity sensor (Checkbox)**: Check this box **ONLY** if the IP you entered belongs to a battery-powered environmental sensor. (See [Sleeping Battery-Powered Sensors](#sleeping-battery-powered-sensors-temphumidity) below).
-*   **Skip validation (Developer Option)**: Enables advanced users and developers to add a device manually without verification. Great for remote environments or provisioning devices that are temporarily powered down.
 
 After setup, the integration exposes the configured local IP address as a diagnostic sensor on the Home Assistant device page. Use that visible IP when checking DHCP reservations, router firewall rules, or direct port `5555` connectivity.
 
@@ -118,13 +117,7 @@ Multi-gang devices (such as double or triple rocker wall switches) share a singl
 *   **Bitmask Control**: CozyLife controls multi-gang channels via a bitmask on Data Point ID 1 (`DPID 1`).
 *   **Auto-Detection**: The integration automatically reads the device's capability maps and count attributes. It determines if it has 1, 2, 3, or more switch gangs.
 *   **Individual Entities**: Home Assistant will create a distinct switch entity for each gang (e.g., `Switch 1`, `Switch 2`). You can rename these individually in the Home Assistant UI without losing local link stability.
-*   **Switch Options**: Some wall switches advertise hidden option DPIDs in the
-    bundled catalog even when the default device response omits them. When
-    available, the integration exposes Power-on State (`DPID 18`), LED Status
-    (`DPID 19`), and Home Assistant-backed schedule controls.
-*   **Schedules**: Wall-switch schedules are executed by Home Assistant against
-    the selected switch entity. Metered plugs that support `DPID 3` can also
-    sync a decoded one-shot turn-off timer to the device itself.
+*   **Switch Options**: When the device reports the required DPIDs, the integration exposes Power-on State (`DPID 18`) and LED Status (`DPID 19`).
 
 ---
 
@@ -132,7 +125,7 @@ Multi-gang devices (such as double or triple rocker wall switches) share a singl
 
 Our integration supports both standard on/off plugs and high-end smart plugs equipped with electricity metering chips.
 
-*   **Metered Plugs**: If the device catalog or DPID response reports DPIDs `26` through `29`, the integration will automatically expose:
+*   **Metered Plugs**: If the device's local DPID response reports DPIDs `26` through `29`, the integration will automatically expose:
     *   **Voltage** (V) - `sensor.cozylife_device_voltage`
     *   **Current** (mA) - `sensor.cozylife_device_current`
     *   **Active Power** (W) - `sensor.cozylife_device_power`
@@ -155,73 +148,9 @@ CozyLife smart lights can range from basic dimmable warm white to fully addressa
 
 ### Sleeping Battery-Powered Sensors (Temp/Humidity)
 
-Battery-powered sensors (such as environment sensors and button controllers) use aggressive deep-sleep modes to achieve months or years of battery life. They only wake up for a split second to transmit changes.
+Battery-powered sensors can sleep between reports. Select **Sleeping temp/humidity sensor**, provide its DHCP-reserved IP, and choose the exact supported model profile. Home Assistant creates Temperature, Humidity, and Battery entities from that profile without waiting for an initial response.
 
-> [!WARNING]
-> Because these devices sleep, standard pinging or active queries will fail 99% of the time, causing setup timeouts. 
-
-#### Setup Workflow for Battery Sensors:
-1. Set a DHCP reservation in your router for the sensor.
-2. In the config flow, enter the sensor's IP address.
-3. Check the box **"Sleeping temp/humidity sensor"**.
-4. The integration will immediately create the Temperature, Humidity, and Battery entities in Home Assistant using **optimistic cached metadata** (without trying to contact the sleeping hardware).
-5. **Initial State**: The entities will initially show as `Unavailable` or `Unknown`.
-6. **Activating the Sensor**: To push the first set of readings immediately:
-   * Press the physical button on the sensor.
-   * Or, breathe warm air onto the sensor grill to trigger a delta event (temperature/humidity change) that forces a wake-up broadcast.
-7. **Subsequent Polls**: The integration establishes a dedicated polling window based on the device's reported configuration interval. The standard firmware interval is **1800 seconds / 30 minutes**. An experimental option allows **600 seconds / 10 minutes** on compatible firmware.
-
-> [!WARNING]
-> The experimental `600s` interval is not guaranteed. In the latest long-run router CSV check for a `Z4tRml` sensor, 58 of 61 post-baseline transitions stayed near 10 minutes, with a best run of 22 consecutive short cycles. Three cycles still fell back to about `1800s` / 30 minutes. Keep the standard `1800s` interval when predictable update timing matters more than faster readings.
-
-#### Restart Behavior
-
-Home Assistant cannot change a sleeping sensor's report interval while the sensor is asleep. After Home Assistant restarts, the integration restores the configured interval from the config entry and begins catch polling, but the value is only pushed to the device when the sensor next wakes.
-
-For the standard `1800s` interval, this usually means the first post-restart update may take up to about 30 minutes unless you wake the sensor manually. For the experimental `600s` interval, the same rule applies: Home Assistant will reinforce the shorter value when the sensor wakes, but the sensor firmware can still occasionally report or revert to `1800s`.
-
-#### Blocking WAN for Experimental Short Intervals
-
-If you are testing the experimental `600s` interval, you can optionally block the sensor's WAN/internet access at the router while keeping local LAN access to Home Assistant open. This reduces external variables while testing, but firmware behavior can still cause a fallback to `1800s`.
-
-Use this network shape:
-
-```text
-Home Assistant <---- LAN allowed ----> CozyLife sensor
-CozyLife sensor ---- WAN blocked ----> Internet / vendor cloud
-```
-
-Before adding any block rule:
-
-1. Create a DHCP reservation for the sensor so its IP address does not change.
-2. Confirm Home Assistant and the sensor are on the same LAN, or on routed VLANs that can reach each other.
-3. Allow TCP/UDP port `5555` between Home Assistant and the sensor.
-4. Block only forwarding from the sensor IP to WAN/internet.
-5. Do not enable AP/client isolation or put the sensor on an isolated guest network.
-
-WAN blocking does not guarantee that short intervals will persist. Some firmware may still report or revert to `1800s` even when internet access is blocked.
-
-OpenWrt / iStoreOS UCI example:
-
-```sh
-uci add firewall rule
-uci set firewall.@rule[-1].name='Block-CozyLife-sensor-WAN'
-uci set firewall.@rule[-1].src='lan'
-uci set firewall.@rule[-1].dest='wan'
-uci set firewall.@rule[-1].src_ip='192.168.3.124'
-uci set firewall.@rule[-1].proto='all'
-uci set firewall.@rule[-1].target='REJECT'
-uci commit firewall
-/etc/init.d/firewall reload
-```
-
-MikroTik RouterOS example:
-
-```routeros
-/ip firewall filter add chain=forward src-address=192.168.3.124 out-interface-list=WAN action=drop comment="Block CozyLife sensor WAN"
-```
-
-For TP-Link, ASUS, UniFi, pfSense/OPNsense, Eero, Deco, Google/Nest WiFi, and ISP routers, use the router's client-specific internet block, parental control, traffic rule, or firewall rule feature. The important requirement is to block only internet access for the sensor, not local traffic between Home Assistant and the sensor.
+The integration keeps the APK-derived local status transport available for valid reports, but does not configure a report interval or claim a fixed wake cadence. The device controls when it is available.
 
 ---
 
@@ -230,9 +159,9 @@ For TP-Link, ASUS, UniFi, pfSense/OPNsense, Eero, Deco, Google/Nest WiFi, and IS
 If you have completed setup but your devices keep dropping off or showing as `Unavailable`, review these network settings:
 
 *   **AP Isolation (Client Isolation)**: Some routers have a security feature called "Access Point Isolation" or "Wireless Client Isolation" enabled. This prevents Wi-Fi devices from talking directly to each other or to your Home Assistant server. **Ensure this setting is DISABLED** in your router's wireless options.
-*   **IGMP Snooping / Multicast**: CozyLife uses UDP multicast broadcasts for auto-discovery. Ensure IGMP Snooping is enabled on your router and network switches to allow local multicast packets to traverse from Wi-Fi to Ethernet seamlessly.
-*   **Port 5555**: The CozyLife protocol uses UDP/TCP port `5555`. Ensure that no internal firewalls or parent router rules are blocking traffic on this port between your Home Assistant IP and the device IP range.
-*   **IP Ping Test**: If a device is unavailable, open a Terminal/SSH in Home Assistant and run `ping <device_ip>`. If you get no response, the device has either lost power, changed IP address, or is disconnected from the Wi-Fi.
+*   **UDP Discovery Broadcasts**: CozyLife discovery sends UDP broadcasts to port `6095`. If discovery does not find a device, confirm that broadcasts can cross the relevant LAN segment; direct setup can use the device's known IP instead.
+*   **TCP Port 5555**: Local device status and control use TCP port `5555`. Ensure that no internal firewall or parent-router rule blocks traffic between Home Assistant and the device IP range.
+*   **IP Ping Test**: A successful ping can confirm basic reachability, but a failed ping does not prove a CozyLife device is offline: devices may ignore ICMP and battery sensors can sleep between reports.
 
 ## 6. Analyzing Discovery Logs & Submitting New Models
 

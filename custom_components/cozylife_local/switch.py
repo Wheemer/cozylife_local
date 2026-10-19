@@ -8,17 +8,10 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, PLUG_OVERCURRENT_PROTECTION, PLUG_TIMER_SCHEDULE
+from .const import DOMAIN, PLUG_OVERCURRENT_PROTECTION
 from .coordinator import CozyLifeCoordinator
-from .schedule import (
-    DEFAULT_SCHEDULE_ID,
-    SCHEDULE_MANAGER,
-    CozyLifeScheduleManager,
-)
 from .switch_options import (
     supported_dpids,
-    supports_light_schedule_options,
-    supports_schedule_options,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,13 +32,9 @@ async def async_setup_entry(
         _LOGGER.error(f"Missing DPID list for {coordinator.device.ip_address}. Cannot set up switch.")
         return
 
-    if (
-        not coordinator.classification.supports_switch_entities
-        and not supports_light_schedule_options(coordinator)
-    ):
+    if not coordinator.classification.supports_switch_entities:
         _LOGGER.debug(
-            "Device %s (Type: %s, Source: %s) does not support switch entities "
-            "or light schedule options, "
+            "Device %s (Type: %s, Source: %s) does not support switch entities, "
             "skipping switch platform setup.",
             coordinator.device.ip_address,
             coordinator.classification.effective_type_code,
@@ -77,10 +66,6 @@ async def async_setup_entry(
     if coordinator.classification.supports_plug_metering:
         if PLUG_OVERCURRENT_PROTECTION in dpids:
             entities.append(CozyLifePlugBooleanSwitch(coordinator))
-    if supports_schedule_options(coordinator):
-        entities.append(CozyLifePlugScheduleEnabledSwitch(coordinator))
-    if supports_light_schedule_options(coordinator):
-        entities.append(CozyLifeLightScheduleEnabledSwitch(coordinator))
 
     if entities:
         async_add_entities(entities)
@@ -159,7 +144,7 @@ class CozyLifeSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
                 self.coordinator.data[BITMASK_DPID] = new_bitmask
                 self.async_write_ha_state()
             # Do NOT request a refresh here, as it causes a race condition.
-            # The regular scheduled update will sync the state later.
+            # The next coordinator refresh will sync the state later.
         else:
             _LOGGER.debug(f"Switch {self.name} is already in the desired state.")
 
@@ -175,86 +160,6 @@ class CozyLifeSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         self.async_write_ha_state()
-
-
-class CozyLifePlugScheduleSwitchBase(SwitchEntity):
-    """Base class for Home Assistant backed schedule switches."""
-
-    _attr_entity_category = EntityCategory.CONFIG
-
-    def __init__(
-        self,
-        coordinator: CozyLifeCoordinator,
-        schedule_id: str = DEFAULT_SCHEDULE_ID,
-    ) -> None:
-        self.coordinator = coordinator
-        self._schedule_id = schedule_id
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, self.coordinator.device.device_id)},
-            name=self.coordinator.device.device_model_name,
-            manufacturer="CozyLife",
-            model=self.coordinator.device.pid,
-        )
-
-    @property
-    def _manager(self) -> CozyLifeScheduleManager:
-        return self.coordinator.hass.data[DOMAIN][SCHEDULE_MANAGER]
-
-
-class CozyLifePlugScheduleEnabledSwitch(CozyLifePlugScheduleSwitchBase):
-    """Enable the default plug schedule."""
-
-    _attr_icon = "mdi:calendar-check"
-    _entity_domain = "switch"
-    _unique_suffix = "schedule_enabled"
-
-    def __init__(
-        self,
-        coordinator: CozyLifeCoordinator,
-        schedule_id: str = DEFAULT_SCHEDULE_ID,
-    ) -> None:
-        super().__init__(coordinator, schedule_id)
-        self._attr_name = f"{coordinator.device.device_model_name} Schedule Enabled"
-        self._attr_unique_id = (
-            f"{coordinator.device.device_id}_{self._unique_suffix}"
-        )
-
-    @property
-    def is_on(self) -> bool:
-        schedule = self._manager.schedule_for_coordinator(
-            self.coordinator,
-            self._schedule_id,
-            entity_domain=self._entity_domain,
-        )
-        return bool(schedule.get("enabled", False))
-
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._manager.async_update_coordinator_schedule(
-            self.coordinator,
-            self._schedule_id,
-            enabled=True,
-            entity_domain=self._entity_domain,
-        )
-        self.async_write_ha_state()
-
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._manager.async_update_coordinator_schedule(
-            self.coordinator,
-            self._schedule_id,
-            enabled=False,
-            entity_domain=self._entity_domain,
-        )
-        self.async_write_ha_state()
-
-
-class CozyLifeLightScheduleEnabledSwitch(CozyLifePlugScheduleEnabledSwitch):
-    """Enable the default light schedule."""
-
-    _entity_domain = "light"
-    _unique_suffix = "light_schedule_enabled"
 
 
 class CozyLifePlugBooleanSwitch(

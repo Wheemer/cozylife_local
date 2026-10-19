@@ -12,7 +12,6 @@ An extremely fast, **100% local** Home Assistant integration for CozyLife-compat
 *   📈 **High-Fidelity Power Monitoring**: Automatically exposes real-time Voltage, Current, Power, and Cumulative Energy (kWh) sensors on metered smart plugs.
 *   💡 **Smart Lighting Enhancements**: Smooth color transitions, custom color-temperature Kelvin ranges, and color state safeguards to prevent hardware glitches.
 *   🔋 **Optimistic Deep-Sleep Handling**: Smart caching for battery-powered temperature/humidity sensors to prevent timeouts during setup while they are sleeping.
-*   🛠️ **Developer Setup Flow**: Includes a "Skip validation" mode for advanced provisioning or remote development settings.
 
 ---
 

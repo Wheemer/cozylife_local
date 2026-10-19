@@ -24,6 +24,7 @@ from .const import (
     RGB_LIGHT_TYPE_CODE,
     SAT,
     SENSOR_BATTERY,
+    SENSOR_HUMIDITY,
     SENSOR_TEMPERATURE,
     SWITCH,
     SWITCH_TYPE_CODE,
@@ -35,20 +36,6 @@ _LOGGER = logging.getLogger(__name__)
 _MODEL_PATH = Path(__file__).with_name("model.json")
 _METERING_DPIDS = {PLUG_ENERGY, PLUG_CURRENT, PLUG_POWER, PLUG_VOLTAGE}
 _SWITCH_GANG_DPIDS = ("2", "4", "6", "8", "10", "12", "14", "16")
-_OUTLET_NAME_MARKERS = ("plug", "socket", "outlet", "插座", "插板")
-_SWITCH_NAME_MARKERS = (
-    "plug",
-    "socket",
-    "outlet",
-    "switch",
-    "gang",
-    "way",
-    "插座",
-    "插板",
-    "开关",
-)
-_GENERIC_POWER_TYPE_CODES = {"05", "19"}
-_GENERIC_POWER_EXCLUDED_NAMES = ("doorbell", "detection", "tire pressure", "门铃")
 _NAMED_GANG_COUNTS = {
     "one": 1,
     "two": 2,
@@ -75,6 +62,7 @@ class ModelInfo:
 
     product_id: str
     type_code: str
+    network_type: str
     type_name: str
     model_name: str | None
     dpids: frozenset[str]
@@ -88,6 +76,7 @@ class DeviceClassification:
     device_type_code: str | None
     effective_type_code: str | None
     source: str
+    is_local_transport: bool
     is_environment_sensor: bool
     is_sensor_category: bool
     is_light: bool
@@ -128,6 +117,7 @@ def _load_model_catalog() -> dict[str, ModelInfo]:
             catalog[str(product_id)] = ModelInfo(
                 product_id=str(product_id),
                 type_code=type_code,
+                network_type=str(model.get("net") or ""),
                 type_name=type_name,
                 model_name=(
                     model.get("device_model_name_en")
@@ -152,29 +142,18 @@ def get_model_info(pid: str | None) -> ModelInfo | None:
     return _load_model_catalog().get(pid)
 
 
-def _is_outlet_name(name: str | None) -> bool:
-    if not name:
-        return False
-    lower_name = name.lower()
-    return any(marker in lower_name for marker in _OUTLET_NAME_MARKERS)
-
-
-def _is_switch_name(name: str | None) -> bool:
-    if not name:
-        return False
-    lower_name = name.lower()
-    return any(marker in lower_name for marker in _SWITCH_NAME_MARKERS)
-
-
-def _is_generic_power_device(model_info: ModelInfo | None) -> bool:
-    if not model_info or model_info.type_code not in _GENERIC_POWER_TYPE_CODES:
-        return False
-    lower_name = (model_info.model_name or "").lower()
-    if any(marker in lower_name for marker in _GENERIC_POWER_EXCLUDED_NAMES):
-        return False
-
-    return _is_switch_name(model_info.model_name) or bool(
-        _METERING_DPIDS & model_info.dpids
+def get_wifi_environment_sensor_models() -> tuple[ModelInfo, ...]:
+    """Return APK-catalogued Wi-Fi temperature/humidity sensor profiles."""
+    required = {SENSOR_HUMIDITY, SENSOR_TEMPERATURE, SENSOR_BATTERY}
+    return tuple(
+        sorted(
+            (
+                model
+                for model in _load_model_catalog().values()
+                if model.network_type == "02" and required <= model.dpids
+            ),
+            key=lambda model: (model.model_name or "", model.product_id),
+        )
     )
 
 
@@ -227,12 +206,29 @@ def classify_device(
     model_info = get_model_info(pid)
     model_name = model_info.model_name if model_info else None
 
+    # The bundled APK catalog explicitly identifies ``01`` sensor products as
+    # Bluetooth and ``04`` products as Zigbee.  Neither can use this local
+    # TCP/UDP transport.  Keep unknown catalog values eligible so a catalog
+    # metadata gap cannot make an already-working local device disappear.
+    is_local_transport = (
+        model_info is None or model_info.network_type not in {"01", "04"}
+    )
+
+    # Sensor category ``03`` contains Wi-Fi, Bluetooth, and Zigbee products.
+    # The APK catalog identifies the Wi-Fi family as network type ``02``.
+    # Require its complete temperature/humidity/battery profile as well, so
+    # reused sensor DPIDs alone cannot promote another transport into this
+    # integration. Retain the known PID as an offline-catalog fallback.
     is_environment_sensor = (
-        pid in KNOWN_SENSOR_PIDS
-        or (
-            SENSOR_TEMPERATURE in dpid_set
-            and SENSOR_BATTERY in dpid_set
-            and SWITCH not in dpid_set
+        is_local_transport
+        and (
+            pid in KNOWN_SENSOR_PIDS
+            or (
+                model_info is not None
+                and model_info.network_type == "02"
+                and {SENSOR_HUMIDITY, SENSOR_TEMPERATURE, SENSOR_BATTERY}
+                <= dpid_set
+            )
         )
     )
 
@@ -245,8 +241,8 @@ def classify_device(
 
     is_known_motor = bool(model_info and model_info.type_name.lower() == "motor")
     is_sensor_category = bool(model_info and model_info.type_name.lower() == "sensor")
-    is_outlet = bool(model_info and _is_outlet_name(model_info.model_name))
-    is_generic_power_device = _is_generic_power_device(model_info)
+    is_outlet = False
+    is_generic_power_device = False
     has_light_capability = (
         TEMP in dpid_set
         or BRIGHT in dpid_set
@@ -256,7 +252,9 @@ def classify_device(
     # Legacy compatibility: some existing RGB lights report type 02. Only use
     # that fallback when the device also exposes light capability DPIDs.
     is_light = (
-        not is_environment_sensor
+        is_local_transport
+        and not is_environment_sensor
+        and SWITCH in dpid_set
         and (
             effective_type_code == LIGHT_TYPE_CODE
             or (
@@ -268,7 +266,8 @@ def classify_device(
     )
 
     is_switch = (
-        not is_environment_sensor
+        is_local_transport
+        and not is_environment_sensor
         and effective_type_code == SWITCH_TYPE_CODE
     )
 
@@ -277,11 +276,9 @@ def classify_device(
         and SWITCH in dpid_set
         and not is_known_motor
         and not (is_light and has_light_capability)
-        and (is_switch or is_generic_power_device)
+        and is_switch
     )
-    switch_entity_count = 1 if (
-        is_generic_power_device and supports_switch_entities
-    ) else (
+    switch_entity_count = (
         detect_switch_entity_count(dpid_set, model_name)
         if supports_switch_entities
         else 0
@@ -297,6 +294,7 @@ def classify_device(
         device_type_code=device_type_code,
         effective_type_code=effective_type_code,
         source=source,
+        is_local_transport=is_local_transport,
         is_environment_sensor=is_environment_sensor,
         is_sensor_category=is_sensor_category,
         is_light=is_light,

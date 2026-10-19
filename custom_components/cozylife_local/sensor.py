@@ -34,7 +34,6 @@ from .const import (
     PLUG_VOLTAGE,
 )
 from .coordinator import CozyLifeCoordinator
-from .discovery import get_model_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,14 +45,14 @@ async def async_setup_entry(
     """Set up CozyLife sensor platform."""
     coordinator: CozyLifeCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    if not coordinator.device.dpid:
+    if (
+        not coordinator.classification.is_local_transport
+        or not coordinator.device.dpid
+    ):
         return
 
     entities = [CozyLifeIPAddressSensor(coordinator)]
     dpids = set(coordinator.device.dpid)
-    model_info = get_model_info(coordinator.device.pid)
-    if model_info:
-        dpids.update(model_info.dpids)
 
     if coordinator.classification.is_environment_sensor:
         entities.extend(

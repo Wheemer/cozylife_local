@@ -8,21 +8,15 @@
           "ip_address": "IP Address (Leave blank to scan)",
           "network_cidr": "Network CIDR / Subnet Range",
           "sleeping_sensor": "Sleeping temp/humidity sensor",
-          "skip_validation": "Skip validation (Developer Mode)",
           "min_kelvin": "Minimum Kelvin (Warm White)",
-          "max_kelvin": "Maximum Kelvin (Cool White)",
-          "experimental_short_interval": "Enable experimental short sensor intervals",
-          "report_interval": "Sensor report interval (seconds)"
+          "max_kelvin": "Maximum Kelvin (Cool White)"
         },
         "data_description": {
           "ip_address": "Static IP address of your device (e.g. 192.168.1.150). Recommended to set a DHCP reservation in your router.",
           "network_cidr": "Subnet to scan during discovery. Use 'auto' to scan the default local network interface or a CIDR range (e.g. 192.168.1.0/24).",
           "sleeping_sensor": "Check this ONLY for battery-powered sensors. Caches metadata so Home Assistant builds entities without waiting for the sleeping hardware to wake up.",
-          "skip_validation": "Skip active network handshake. Recommended only for remote environments, mock tests, or when adding an offline device.",
           "min_kelvin": "The warmest light color temperature supported by your bulb hardware (typical range: 2000K to 2700K).",
-          "max_kelvin": "The coolest light color temperature supported by your bulb hardware (typical range: 5000K to 6500K).",
-          "experimental_short_interval": "Allow 600s / 10m updates on compatible sleeping-sensor firmware. The standard firmware interval is 1800s / 30m. Some wake cycles may still fall back to 1800s.",
-          "report_interval": "Interval at which the environment sensor wakes and transmits readings. Standard mode uses at least 1800s / 30m. Experimental mode allows 600s / 10m, with occasional firmware fallback to 1800s."
+          "max_kelvin": "The coolest light color temperature supported by your bulb hardware (typical range: 5000K to 6500K)."
         }
       },
       "select_device": {
@@ -38,11 +32,11 @@
       "invalid_ip": "Please enter a valid IPv4 address (e.g., 192.168.1.50).",
       "invalid_network": "Please enter a valid IPv4 network CIDR (e.g. 192.168.1.0/24) or use the keyword 'auto'.",
       "ip_required_for_sleeping_sensor": "A single, static IP address is required when manually provisioning a sleeping battery sensor.",
-      "ip_required_for_skip_validation": "A single, static IP address is required when bypass validation (Developer Mode) is enabled.",
       "network_too_large": "The specified subnet range is too large to scan. Please restrict your scan to a /24 network (256 hosts) or smaller.",
       "no_devices_found": "No online CozyLife devices were detected on the network. Check your device's power, Wi-Fi connection, and ensure it is on the same subnet as Home Assistant.",
       "no_network": "Home Assistant could not automatically detect an active local network interface. Please specify a CIDR range manually.",
       "timeout_connect": "The connection attempt to the device timed out. Check network response times or router settings.",
+      "unsupported_transport": "This model is catalogued as Bluetooth or Zigbee, not a Wi-Fi local-TCP device. CozyLife Local cannot communicate with it.",
       "unknown": "An unexpected system error occurred during device handshake. Please check your Home Assistant system logs."
     },
     "abort": {
@@ -53,22 +47,14 @@
     "step": {
       "init": {
         "title": "CozyLife Device Options",
-        "description": "Tune local parameters, report windows, and logging options for this CozyLife device.",
+        "description": "Tune local parameters and logging options for this CozyLife device.",
         "data": {
           "enable_debug": "Enable verbose integration debug logs",
-          "experimental_short_interval": "Enable experimental short sensor intervals",
-          "humidity_sensitivity": "Humidity reporting sensitivity threshold",
           "max_kelvin": "Maximum Kelvin (Cool White)",
-          "min_kelvin": "Minimum Kelvin (Warm White)",
-          "report_interval": "Sensor polling window (seconds)",
-          "temp_sensitivity": "Temperature reporting sensitivity threshold"
+          "min_kelvin": "Minimum Kelvin (Warm White)"
         },
         "data_description": {
           "enable_debug": "Streams complete local packet handshakes to Home Assistant logs. Extremely helpful for troubleshooting unrecognized device models.",
-          "experimental_short_interval": "Allow 600s / 10m updates on compatible sleeping-sensor firmware. The standard firmware interval is 1800s / 30m. Some wake cycles may still fall back to 1800s.",
-          "humidity_sensitivity": "Only report humidity updates when the value shifts by this threshold (5 represents 0.5% humidity delta).",
-          "temp_sensitivity": "Only report temperature updates when the value shifts by this threshold (5 represents 0.5°C temperature delta).",
-          "report_interval": "The wake interval in seconds for environmental sensors. Standard mode uses at least 1800s / 30m. Experimental mode allows 600s / 10m, with occasional firmware fallback to 1800s.",
           "min_kelvin": "Adjust the warmest color temperature limit (Kelvin) for this light bulb.",
           "max_kelvin": "Adjust the coolest color temperature limit (Kelvin) for this light bulb."
         }
