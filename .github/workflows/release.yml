@@ -62,27 +62,30 @@ jobs:
         run: |
           set -euo pipefail
           previous_tag="$(git describe --tags --abbrev=0 "${GITHUB_SHA}^" 2>/dev/null || true)"
+          changes=""
+          if [ -n "${previous_tag}" ]; then
+            changes="$(
+              git log --format='%s' --no-merges "${previous_tag}..${GITHUB_SHA}" \
+                | sed \
+                    -e '/^Prepare [0-9][0-9.]* prerelease$/d' \
+                    -e '/^Generate useful release notes automatically$/d' \
+                    -e '/^Harden CI, releases, and catalog automation$/d' \
+                    -e '/^Disable duplicate Dependabot updates on fork$/d' \
+                    -e '/^Bump /d'
+            )"
+          fi
           {
             echo "## CozyLife Local ${RELEASE_VERSION}"
             echo
-            echo "Automated ${RELEASE_KIND} built from the verified source tag."
+            echo "This ${RELEASE_KIND} includes the following changes."
             echo
-            echo "### Install"
+            echo "### Highlights"
             echo
-            echo "In HACS, open CozyLife Local, choose **Redownload**, select this version when prompted, then restart Home Assistant."
-            echo
-            echo "### Changes"
-            echo
-            if [ -n "${previous_tag}" ]; then
-              git log --format='- %s' --no-merges "${previous_tag}..${GITHUB_SHA}"
+            if [ -n "${changes}" ]; then
+              printf '%s\n' "${changes}" | sed 's/^/- /'
             else
-              echo "- Initial automated release."
+              echo "- No user-facing behavior changes."
             fi
-            echo
-            echo "### Validation"
-            echo
-            echo "- Regression tests and Python compilation passed before packaging."
-            echo "- The attached \`cozylife_local.zip\` is the HACS installation asset."
           } > RELEASE_NOTES.md
 
       - name: Upload release asset
