@@ -26,6 +26,10 @@ SCAN_CONNECT_TIMEOUT = 0.75
 DEVICE_INFO_TIMEOUT = 1.5
 SCAN_CONCURRENCY = 64
 UDP_DISCOVERY_WINDOW_SECONDS = 5.0
+# The APK starts a search with one broadcast, then emits sixteen more when the
+# active network changes to Wi-Fi. Keep that full burst on one socket so every
+# reply returns to the listener that originated the request.
+APK_UDP_DISCOVERY_BROADCAST_COUNT = 17
 
 
 @dataclass(frozen=True)
@@ -140,15 +144,13 @@ async def _async_discover_udp_addresses(
             local_addr=("0.0.0.0", 0),
             allow_broadcast=True,
         )
-        request = {
-            "cmd": 0,
-            "pv": 0,
-            "sn": str(int(time.time() * 1000)),
-            "msg": {},
-        }
-        transport.sendto(
-            (json.dumps(request, separators=(",", ":")) + "\r\n").encode(),
-            ("255.255.255.255", COZYLIFE_UDP_DISCOVERY_PORT),
+        sent_count = _send_apk_udp_discovery_burst(transport)
+        _LOGGER.info(
+            "CozyLife UDP discovery sent %s APK-format broadcasts to "
+            "255.255.255.255:%s and is listening for replies for %s seconds",
+            sent_count,
+            COZYLIFE_UDP_DISCOVERY_PORT,
+            UDP_DISCOVERY_WINDOW_SECONDS,
         )
         await asyncio.sleep(UDP_DISCOVERY_WINDOW_SECONDS)
     except OSError as err:
@@ -168,6 +170,22 @@ async def _async_discover_udp_addresses(
         },
         key=lambda address: tuple(int(part) for part in address.split(".")),
     )
+
+
+def _send_apk_udp_discovery_burst(transport: asyncio.DatagramTransport) -> int:
+    """Send the APK's local UDP discovery burst on an existing receive socket."""
+    for _ in range(APK_UDP_DISCOVERY_BROADCAST_COUNT):
+        request = {
+            "cmd": 0,
+            "pv": 0,
+            "sn": str(int(time.time() * 1000)),
+            "msg": {},
+        }
+        transport.sendto(
+            (json.dumps(request, separators=(",", ":")) + "\r\n").encode(),
+            ("255.255.255.255", COZYLIFE_UDP_DISCOVERY_PORT),
+        )
+    return APK_UDP_DISCOVERY_BROADCAST_COUNT
 
 
 async def _async_get_scan_networks(

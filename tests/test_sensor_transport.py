@@ -52,6 +52,15 @@ def _load_coordinator():
     return CozyLifeCoordinator
 
 
+def _load_network_discovery():
+    """Load network discovery with only the HA symbols it requires."""
+    _load_api()
+    sys.modules.pop("cozylife_local.network_discovery", None)
+    from cozylife_local import network_discovery
+
+    return network_discovery
+
+
 def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None:
     """The local writer sends attr:[1] and the reader keeps every report."""
     CozyLifeDevice = _load_api()
@@ -215,6 +224,33 @@ def test_discovery_accepts_only_the_matching_device_and_valid_address() -> None:
         assert found == ["10.0.0.115"]
 
     asyncio.run(exercise())
+
+
+def test_udp_discovery_uses_the_apk_burst_on_one_receive_socket() -> None:
+    """Automatic discovery preserves the APK's 17 request UDP session."""
+    network_discovery = _load_network_discovery()
+
+    class FakeTransport:
+        def __init__(self) -> None:
+            self.sent: list[tuple[bytes, tuple[str, int]]] = []
+
+        def sendto(self, data: bytes, address: tuple[str, int]) -> None:
+            self.sent.append((data, address))
+
+    transport = FakeTransport()
+    assert (
+        network_discovery._send_apk_udp_discovery_burst(transport)
+        == network_discovery.APK_UDP_DISCOVERY_BROADCAST_COUNT
+    )
+    assert len(transport.sent) == 17
+    for frame, address in transport.sent:
+        assert address == ("255.255.255.255", 6095)
+        assert frame.endswith(b"\r\n")
+        request = json.loads(frame.decode())
+        assert request["cmd"] == 0
+        assert request["pv"] == 0
+        assert isinstance(request["sn"], str)
+        assert request["msg"] == {}
 
 
 def test_apk_udp_discovery_cache_keeps_valid_device_identity_and_address() -> None:
