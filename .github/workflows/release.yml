@@ -31,7 +31,7 @@ jobs:
           test "${tag}" != "${version}"
           test "${manifest_version}" = "${version}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
-          if [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]]; then
             echo "prerelease=true" >> "${GITHUB_OUTPUT}"
             echo "release_kind=prerelease" >> "${GITHUB_OUTPUT}"
           elif [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
