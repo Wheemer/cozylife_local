@@ -56,6 +56,16 @@ _NAMED_GANG_COUNTS = {
     "八": 8,
 }
 
+# APK catalogue PIDs whose entities are implemented by binary_sensor.py.
+# Keep this with the catalogue classification rather than making config flow
+# depend on a platform module.
+LOCAL_BINARY_SENSOR_PIDS = frozenset(
+    {
+        "kOTYxo", "0iDvw9", "mBRflp", "GnOqhr", "t7x7Uz",  # contact
+        "y9DaDw",  # water leak
+    }
+)
+
 
 @dataclass(frozen=True)
 class ModelInfo:
@@ -309,4 +319,16 @@ def classify_device(
         supports_plug_metering=supports_plug_metering,
         switch_entity_count=switch_entity_count,
         model_name=model_name,
+    )
+
+
+def supports_local_entities(
+    pid: str | None, classification: DeviceClassification
+) -> bool:
+    """Return whether this APK-catalogued local model has implemented entities."""
+    return bool(
+        classification.is_environment_sensor
+        or classification.is_light
+        or classification.supports_switch_entities
+        or pid in LOCAL_BINARY_SENSOR_PIDS
     )

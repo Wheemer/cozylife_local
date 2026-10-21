@@ -109,6 +109,7 @@ def _load_config_flow():
     discovery.async_load_model_catalog = lambda _hass: None
     discovery.classify_device = lambda *_args: None
     discovery.get_model_info = lambda _pid: None
+    discovery.supports_local_entities = lambda *_args: True
     sys.modules["cozylife_local.discovery"] = discovery
     sys.modules.pop("cozylife_local.config_flow", None)
     from cozylife_local import config_flow
@@ -223,15 +224,14 @@ def test_udp_discovery_shows_normal_confirmation_before_adding() -> None:
     asyncio.run(exercise())
 
 
-def test_confirming_udp_sleeping_sensor_needs_no_tcp_handshake() -> None:
-    """The card's Add action uses saved UDP identity for a sleeping sensor."""
+def test_confirming_udp_catalogued_plug_needs_no_tcp_inventory() -> None:
+    """A catalogued plug is added from its announced local identity."""
     config_flow = _load_config_flow()
 
     async def exercise() -> None:
         flow = object.__new__(config_flow.CozyLifeConfigFlow)
         flow.hass = object()
         entries: list[dict] = []
-        tcp_handshakes: list[object] = []
         cards: list[dict] = []
         unique_ids: list[str] = []
 
@@ -241,23 +241,20 @@ def test_confirming_udp_sleeping_sensor_needs_no_tcp_handshake() -> None:
         async def load_catalog(_hass) -> None:
             return None
 
-        async def tcp_handshake(*_args) -> dict:
-            tcp_handshakes.append(True)
-            return {"type": "create_entry"}
-
         flow.async_set_unique_id = set_unique_id
         flow._abort_if_unique_id_configured = lambda: None
         flow.async_create_entry = lambda **kwargs: entries.append(kwargs) or kwargs
         flow.async_show_form = lambda **kwargs: cards.append(kwargs) or kwargs
-        flow._async_create_entry_from_ip = tcp_handshake
         model = types.SimpleNamespace(
-            model_name="CozyLife Temp/Humidity",
-            type_code="03",
-            dpids=frozenset({"4", "8", "9"}),
+            model_name="Smart Plug",
+            type_code="01",
+            dpids=frozenset({"1", "11", "18", "19", "20"}),
         )
         classification = types.SimpleNamespace(
-            is_environment_sensor=True,
+            is_environment_sensor=False,
             is_local_transport=True,
+            is_light=False,
+            supports_switch_entities=True,
         )
 
         with (
@@ -271,25 +268,27 @@ def test_confirming_udp_sleeping_sensor_needs_no_tcp_handshake() -> None:
         ):
             discovery_card = await flow.async_step_integration_discovery(
                 {
-                    "device_id": "sensor-1", "ip_address": "10.0.0.115",
-                    "pid": "Z4tRml", "device_type_code": "03",
+                    "device_id": "plug-1", "ip_address": "10.0.0.44",
+                    "pid": "plug-pid", "device_type_code": "01",
                 }
             )
             result = await flow.async_step_confirm_discovery({})
 
-        assert tcp_handshakes == []
-        assert unique_ids == ["sensor-1"]
+        assert unique_ids == ["plug-1"]
         assert discovery_card["step_id"] == "confirm_discovery"
         assert cards == [discovery_card]
         assert entries == [
             {
-                "title": "CozyLife Temp/Humidity",
+                "title": "Smart Plug",
                 "data": {
-                    "ip_address": "10.0.0.115",
-                    "device_id": "sensor-1",
-                    "pid": "Z4tRml",
-                    "device_type_code": "03",
-                    "dpids": ["4", "8", "9"],
+                    "ip_address": "10.0.0.44",
+                    "device_id": "plug-1",
+                    "pid": "plug-pid",
+                    "device_type_code": "01",
+                    "dpids": ["1", "11", "18", "19", "20"],
+                    "min_kelvin": 2000,
+                    "max_kelvin": 6500,
+                    "announced_via_udp": True,
                 },
             }
         ]
