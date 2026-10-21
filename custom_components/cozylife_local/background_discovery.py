@@ -233,8 +233,10 @@ class CozyLifeBackgroundDiscovery:
 
 async def async_get_background_discovery(
     hass: HomeAssistant,
+    *,
+    start: bool = True,
 ) -> CozyLifeBackgroundDiscovery:
-    """Return the domain's one shared APK-style discovery service."""
+    """Return the domain's shared discovery service, optionally starting it."""
     domain_data = hass.data.setdefault(DOMAIN, {})
     lock = domain_data.get(DATA_DISCOVERY_LOCK)
     if lock is None:
@@ -246,6 +248,6 @@ async def async_get_background_discovery(
         if service is None:
             service = CozyLifeBackgroundDiscovery(hass)
             domain_data[DATA_DISCOVERY_SERVICE] = service
-        if service._transport is None:
+        if start and service._transport is None:
             await service.async_start()
     return service

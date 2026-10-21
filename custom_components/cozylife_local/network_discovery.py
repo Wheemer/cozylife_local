@@ -102,7 +102,11 @@ async def _async_discover_udp_addresses(
 ) -> list[str]:
     """Use the integration's APK-style shared UDP listener for a scan."""
     try:
-        announcements = await (await async_get_background_discovery(hass)).async_scan()
+        # Do not eagerly start here: ``async_scan`` must see whether this is
+        # the first listener start so it emits the APK's 17-frame Wi-Fi burst
+        # rather than that burst plus a separate manual-search frame.
+        discovery = await async_get_background_discovery(hass, start=False)
+        announcements = await discovery.async_scan()
     except OSError as err:
         _LOGGER.debug("CozyLife UDP discovery was unavailable: %s", err)
         return []

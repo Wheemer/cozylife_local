@@ -460,6 +460,51 @@ def test_manual_scan_reuses_listener_and_defers_automatic_flow() -> None:
     asyncio.run(exercise())
 
 
+def test_first_manual_scan_uses_only_the_apk_start_burst() -> None:
+    """The first setup scan does not append an eighteenth UDP broadcast."""
+    background_discovery = _load_background_discovery()
+
+    async def exercise() -> None:
+        class FakeTransport:
+            def __init__(self) -> None:
+                self.sent: list[tuple[bytes, tuple[str, int]]] = []
+
+            def sendto(self, data: bytes, address: tuple[str, int]) -> None:
+                self.sent.append((data, address))
+
+        hass = types.SimpleNamespace(data={})
+        transport = FakeTransport()
+
+        async def start_with_apk_burst(service) -> None:
+            service._transport = transport
+            service._broadcast_task = None
+            service._send_broadcasts(
+                background_discovery.APK_NETWORK_CHANGE_BROADCAST_COUNT
+            )
+
+        async def no_wait(_delay) -> None:
+            return None
+
+        with (
+            patch.object(
+                background_discovery.CozyLifeBackgroundDiscovery,
+                "async_start",
+                start_with_apk_burst,
+            ),
+            patch.object(background_discovery.asyncio, "sleep", no_wait),
+        ):
+            service = await background_discovery.async_get_background_discovery(
+                hass,
+                start=False,
+            )
+            assert not service.is_running
+            assert await service.async_scan() == []
+
+        assert len(transport.sent) == 17
+
+    asyncio.run(exercise())
+
+
 def test_udp_discovery_shutdown_cancels_its_task_and_closes_the_socket() -> None:
     """Stopping Home Assistant leaves no discovery socket or task behind."""
     background_discovery = _load_background_discovery()
