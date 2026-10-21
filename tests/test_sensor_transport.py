@@ -53,15 +53,6 @@ def _load_coordinator():
     return CozyLifeCoordinator
 
 
-def _load_network_discovery():
-    """Load network discovery with only the HA symbols it requires."""
-    _load_api()
-    sys.modules.pop("cozylife_local.network_discovery", None)
-    from cozylife_local import network_discovery
-
-    return network_discovery
-
-
 def _load_background_discovery():
     """Load the shared UDP service with the minimal HA symbols it uses."""
     _load_api()
@@ -118,19 +109,7 @@ def _load_config_flow():
     discovery.async_load_model_catalog = lambda _hass: None
     discovery.classify_device = lambda *_args: None
     discovery.get_model_info = lambda _pid: None
-    discovery.get_wifi_environment_sensor_models = lambda: []
     sys.modules["cozylife_local.discovery"] = discovery
-    network_discovery = types.ModuleType("cozylife_local.network_discovery")
-    network_discovery.AUTO_NETWORK = "auto"
-    network_discovery.DiscoveredDevice = object
-    network_discovery.NetworkScanTooLarge = ValueError
-    network_discovery.NoNetworkAvailable = ValueError
-
-    async def async_discover_devices(_hass, _network):
-        return []
-
-    network_discovery.async_discover_devices = async_discover_devices
-    sys.modules["cozylife_local.network_discovery"] = network_discovery
     sys.modules.pop("cozylife_local.config_flow", None)
     from cozylife_local import config_flow
 
@@ -138,7 +117,6 @@ def _load_config_flow():
     # temporary modules so later tests import the actual catalog and UDP code.
     sys.modules.pop("cozylife_local.background_discovery", None)
     sys.modules.pop("cozylife_local.discovery", None)
-    sys.modules.pop("cozylife_local.network_discovery", None)
     return config_flow
 
 
@@ -650,105 +628,6 @@ def test_shared_udp_listener_uses_home_assistant_discovery_flow_helper() -> None
             },
         )
     ]
-
-
-def test_manual_scan_reuses_listener_and_defers_automatic_flow() -> None:
-    """A setup scan sends one APK frame and returns its own announcement."""
-    background_discovery = _load_background_discovery()
-
-    async def exercise() -> None:
-        service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
-        service._devices = {}
-        service._entry_callbacks = {}
-        service._address_callbacks = {}
-        service._scan_in_progress = 0
-        flow_calls: list[object] = []
-        send_count = 0
-
-        class FakeTransport:
-            def sendto(self, _data, _address) -> None:
-                nonlocal send_count
-                send_count += 1
-                service._handle_device(
-                    background_discovery.UdpDiscoveredDevice(
-                        device_id="new-device",
-                        ip_address="10.0.0.44",
-                        pid="hjk1jk",
-                        device_type_code="05",
-                    )
-                )
-
-        service._transport = FakeTransport()
-        service.hass = types.SimpleNamespace(
-            config_entries=types.SimpleNamespace(async_entries=lambda _domain: [])
-        )
-
-        async def no_wait(_delay) -> None:
-            return None
-
-        with (
-            patch.object(background_discovery.asyncio, "sleep", no_wait),
-            patch.object(
-                background_discovery.discovery_flow,
-                "async_create_flow",
-                lambda *_args, **_kwargs: flow_calls.append(True),
-            ),
-        ):
-            discovered = await service.async_scan()
-
-        assert [device.device_id for device in discovered] == ["new-device"]
-        assert send_count == 1
-        assert flow_calls == []
-
-    asyncio.run(exercise())
-
-
-def test_first_manual_scan_uses_only_the_apk_start_burst() -> None:
-    """The first setup scan does not append an eighteenth UDP broadcast."""
-    background_discovery = _load_background_discovery()
-
-    async def exercise() -> None:
-        class FakeTransport:
-            def __init__(self) -> None:
-                self.sent: list[tuple[bytes, tuple[str, int]]] = []
-
-            def sendto(self, data: bytes, address: tuple[str, int]) -> None:
-                self.sent.append((data, address))
-
-        hass = types.SimpleNamespace(
-            data={},
-            bus=types.SimpleNamespace(async_listen_once=lambda *_args: None),
-        )
-        transport = FakeTransport()
-
-        async def start_with_apk_burst(service) -> None:
-            service._transport = transport
-            service._broadcast_task = None
-            service._send_broadcasts(
-                background_discovery.APK_NETWORK_CHANGE_BROADCAST_COUNT
-            )
-
-        async def no_wait(_delay) -> None:
-            return None
-
-        with (
-            patch.object(
-                background_discovery.CozyLifeBackgroundDiscovery,
-                "async_start",
-                start_with_apk_burst,
-            ),
-            patch.object(background_discovery.asyncio, "sleep", no_wait),
-        ):
-            service = await background_discovery.async_get_background_discovery(
-                hass,
-                start=False,
-            )
-            assert not service.is_running
-            assert await service.async_scan() == []
-
-        assert len(transport.sent) == 17
-
-    asyncio.run(exercise())
 
 
 def test_udp_discovery_shutdown_cancels_its_task_and_closes_the_socket() -> None:

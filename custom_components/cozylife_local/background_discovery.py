@@ -28,7 +28,6 @@ DATA_DISCOVERY_STOP_UNSUB = "background_udp_discovery_stop_unsub"
 # same 500 ms cadence used by the known-address sensor probe.
 DISCOVERY_BROADCAST_INTERVAL_SECONDS = 0.5
 APK_NETWORK_CHANGE_BROADCAST_COUNT = 17
-CONFIG_FLOW_DISCOVERY_WINDOW_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -86,7 +85,6 @@ class CozyLifeBackgroundDiscovery:
         self._devices: dict[str, tuple[UdpDiscoveredDevice, float]] = {}
         self._entry_callbacks: dict[str, Callable[[str], Awaitable[None]]] = {}
         self._address_callbacks: dict[str, Callable[[str], Awaitable[None]]] = {}
-        self._scan_in_progress = 0
 
     async def async_start(self) -> None:
         """Open the APK-style receive socket and begin its Wi-Fi cadence."""
@@ -157,29 +155,6 @@ class CozyLifeBackgroundDiscovery:
         """Stop routing replies by a provisional sensor address."""
         self._address_callbacks.pop(ip_address, None)
 
-    async def async_scan(self) -> list[UdpDiscoveredDevice]:
-        """Use the shared socket for an interactive config-flow scan."""
-        scan_started = time.monotonic()
-        self._scan_in_progress += 1
-        try:
-            was_started = self._transport is not None
-            if not was_started:
-                await self.async_start()
-            else:
-                # The APK's ordinary daemon cycle sends one message every ten
-                # seconds. Its manual Wi-Fi setup path calls startSearchDevices,
-                # which sends one command-0 frame, so do the same here.
-                self._send_broadcasts(1)
-
-            await asyncio.sleep(CONFIG_FLOW_DISCOVERY_WINDOW_SECONDS)
-            return [
-                device
-                for device, received_at in self._devices.values()
-                if received_at >= scan_started
-            ]
-        finally:
-            self._scan_in_progress -= 1
-
     async def _async_broadcast_loop(self) -> None:
         """Keep one shared UDP discovery request present for sensor wake windows."""
         while True:
@@ -216,16 +191,6 @@ class CozyLifeBackgroundDiscovery:
             self.hass.async_create_task(callback(device.ip_address))
             return
 
-        # The user-initiated config flow owns announcements received during
-        # its scan. Starting a second flow here would make two competing setup
-        # cards for the same packet.
-        if self._scan_in_progress:
-            _LOGGER.debug(
-                "Keeping CozyLife UDP announcement for DID %s at %s in the active scan",
-                device.device_id,
-                device.ip_address,
-            )
-            return
         if self._is_configured(device.device_id, device.ip_address):
             _LOGGER.debug(
                 "Ignoring CozyLife UDP announcement for already configured DID %s at %s",
