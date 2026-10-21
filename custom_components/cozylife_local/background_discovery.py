@@ -11,7 +11,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import discovery_flow
 
 from .const import DOMAIN
 from .cozylife_api import COZYLIFE_UDP_DISCOVERY_PORT, _get_sn
@@ -79,7 +80,6 @@ class CozyLifeBackgroundDiscovery:
         self._broadcast_task: asyncio.Task[None] | None = None
         self._devices: dict[str, tuple[UdpDiscoveredDevice, float]] = {}
         self._entry_callbacks: dict[str, Callable[[str], Awaitable[None]]] = {}
-        self._flow_started_for: set[str] = set()
         self._scan_in_progress = 0
 
     async def async_start(self) -> None:
@@ -188,12 +188,9 @@ class CozyLifeBackgroundDiscovery:
         # cards for the same packet.
         if self._scan_in_progress:
             return
-        if self._is_configured(device.device_id, device.ip_address) or (
-            device.device_id in self._flow_started_for
-        ):
+        if self._is_configured(device.device_id, device.ip_address):
             return
-        self._flow_started_for.add(device.device_id)
-        self.hass.async_create_task(self._async_start_discovery_flow(device))
+        self._async_start_discovery_flow(device)
 
     def _is_configured(self, device_id: str, ip_address: str) -> bool:
         """Avoid cards for configured DIDs, including provisional sensor IDs."""
@@ -207,10 +204,12 @@ class CozyLifeBackgroundDiscovery:
             for entry in self.hass.config_entries.async_entries(DOMAIN)
         )
 
-    async def _async_start_discovery_flow(self, device: UdpDiscoveredDevice) -> None:
+    @callback
+    def _async_start_discovery_flow(self, device: UdpDiscoveredDevice) -> None:
         """Offer an unconfigured DID through Home Assistant's discovery UI."""
         try:
-            await self.hass.config_entries.flow.async_init(
+            discovery_flow.async_create_flow(
+                self.hass,
                 DOMAIN,
                 context={"source": config_entries.SOURCE_INTEGRATION_DISCOVERY},
                 data={

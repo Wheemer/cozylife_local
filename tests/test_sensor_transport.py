@@ -19,6 +19,7 @@ def _load_api():
     homeassistant = types.ModuleType("homeassistant")
     core = types.ModuleType("homeassistant.core")
     core.HomeAssistant = object
+    core.callback = lambda func: func
     sys.modules["homeassistant"] = homeassistant
     sys.modules["homeassistant.core"] = core
     package = types.ModuleType("cozylife_local")
@@ -68,6 +69,11 @@ def _load_background_discovery():
     config_entries = types.ModuleType("homeassistant.config_entries")
     config_entries.SOURCE_INTEGRATION_DISCOVERY = "integration_discovery"
     sys.modules["homeassistant.config_entries"] = config_entries
+    helpers = types.ModuleType("homeassistant.helpers")
+    discovery_flow = types.ModuleType("homeassistant.helpers.discovery_flow")
+    discovery_flow.async_create_flow = lambda *_args, **_kwargs: None
+    sys.modules["homeassistant.helpers"] = helpers
+    sys.modules["homeassistant.helpers.discovery_flow"] = discovery_flow
     sys.modules.pop("cozylife_local.background_discovery", None)
     from cozylife_local import background_discovery
 
@@ -306,7 +312,6 @@ def test_shared_udp_listener_routes_a_known_did_without_a_second_socket() -> Non
         service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
         service._devices = {}
         service._entry_callbacks = {"plug-1": handle_address}
-        service._flow_started_for = set()
         service._scan_in_progress = 0
         service.hass = types.SimpleNamespace(async_create_task=asyncio.create_task)
 
@@ -353,6 +358,51 @@ def test_shared_udp_listener_creation_is_serialized() -> None:
         assert starts == [first]
 
     asyncio.run(exercise())
+
+
+def test_shared_udp_listener_uses_home_assistant_discovery_flow_helper() -> None:
+    """An unconfigured announcement becomes one native discovery flow."""
+    background_discovery = _load_background_discovery()
+    calls: list[tuple[object, str, dict, dict]] = []
+    hass = types.SimpleNamespace(
+        config_entries=types.SimpleNamespace(async_entries=lambda _domain: [])
+    )
+    service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
+    service.hass = hass
+    service._devices = {}
+    service._entry_callbacks = {}
+    service._scan_in_progress = 0
+
+    def create_flow(flow_hass, domain, *, context, data) -> None:
+        calls.append((flow_hass, domain, context, data))
+
+    with patch.object(
+        background_discovery.discovery_flow,
+        "async_create_flow",
+        create_flow,
+    ):
+        service._handle_device(
+            background_discovery.UdpDiscoveredDevice(
+                device_id="new-device",
+                ip_address="10.0.0.44",
+                pid="hjk1jk",
+                device_type_code="05",
+            )
+        )
+
+    assert calls == [
+        (
+            hass,
+            "cozylife_local",
+            {"source": "integration_discovery"},
+            {
+                "device_id": "new-device",
+                "ip_address": "10.0.0.44",
+                "pid": "hjk1jk",
+                "device_type_code": "05",
+            },
+        )
+    ]
 
 
 def test_persistent_transport_preserves_existing_info_state_and_set_commands() -> None:
