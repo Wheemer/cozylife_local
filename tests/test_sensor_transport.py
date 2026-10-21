@@ -466,7 +466,6 @@ def test_shared_udp_listener_routes_a_known_did_without_a_second_socket() -> Non
         service._devices = {}
         service._entry_callbacks = {"plug-1": handle_address}
         service._address_callbacks = {}
-        service._scan_in_progress = 0
         service.hass = types.SimpleNamespace(async_create_task=asyncio.create_task)
 
         service._handle_device(
@@ -596,7 +595,6 @@ def test_shared_udp_listener_uses_home_assistant_discovery_flow_helper() -> None
     service._devices = {}
     service._entry_callbacks = {}
     service._address_callbacks = {}
-    service._scan_in_progress = 0
 
     def create_flow(flow_hass, domain, *, context, data) -> None:
         calls.append((flow_hass, domain, context, data))
@@ -677,7 +675,6 @@ def test_udp_announcement_routes_to_provisional_sensor_address() -> None:
         service._devices = {}
         service._entry_callbacks = {}
         service._address_callbacks = {"10.0.0.115": handle_address}
-        service._scan_in_progress = 0
 
         with patch.object(
             background_discovery.discovery_flow,
