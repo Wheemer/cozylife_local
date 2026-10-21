@@ -34,6 +34,7 @@ def _load_coordinator():
     _load_api()
     config_entries = types.ModuleType("homeassistant.config_entries")
     config_entries.ConfigEntry = object
+    config_entries.SOURCE_INTEGRATION_DISCOVERY = "integration_discovery"
     helpers = types.ModuleType("homeassistant.helpers")
     update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
 
@@ -59,6 +60,18 @@ def _load_network_discovery():
     from cozylife_local import network_discovery
 
     return network_discovery
+
+
+def _load_background_discovery():
+    """Load the shared UDP service with the minimal HA symbols it uses."""
+    _load_api()
+    config_entries = types.ModuleType("homeassistant.config_entries")
+    config_entries.SOURCE_INTEGRATION_DISCOVERY = "integration_discovery"
+    sys.modules["homeassistant.config_entries"] = config_entries
+    sys.modules.pop("cozylife_local.background_discovery", None)
+    from cozylife_local import background_discovery
+
+    return background_discovery
 
 
 def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None:
@@ -226,9 +239,9 @@ def test_discovery_accepts_only_the_matching_device_and_valid_address() -> None:
     asyncio.run(exercise())
 
 
-def test_udp_discovery_uses_the_apk_burst_on_one_receive_socket() -> None:
-    """Automatic discovery preserves the APK's 17 request UDP session."""
-    network_discovery = _load_network_discovery()
+def test_shared_udp_discovery_uses_the_apk_burst_on_one_receive_socket() -> None:
+    """The one shared listener preserves the APK's 17 request UDP session."""
+    background_discovery = _load_background_discovery()
 
     class FakeTransport:
         def __init__(self) -> None:
@@ -238,9 +251,10 @@ def test_udp_discovery_uses_the_apk_burst_on_one_receive_socket() -> None:
             self.sent.append((data, address))
 
     transport = FakeTransport()
-    assert (
-        network_discovery._send_apk_udp_discovery_burst(transport)
-        == network_discovery.APK_UDP_DISCOVERY_BROADCAST_COUNT
+    service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
+    service._transport = transport
+    service._send_broadcasts(
+        background_discovery.APK_NETWORK_CHANGE_BROADCAST_COUNT
     )
     assert len(transport.sent) == 17
     for frame, address in transport.sent:
@@ -253,12 +267,11 @@ def test_udp_discovery_uses_the_apk_burst_on_one_receive_socket() -> None:
         assert request["msg"] == {}
 
 
-def test_apk_udp_discovery_cache_keeps_valid_device_identity_and_address() -> None:
-    """The setup scanner accepts the APK's ``did``/``ip`` UDP reply shape."""
-    _load_api()
-    from cozylife_local.network_discovery import _ApkUdpDiscoveryProtocol
-
-    protocol = _ApkUdpDiscoveryProtocol()
+def test_shared_apk_udp_cache_keeps_valid_device_identity_and_address() -> None:
+    """The shared listener accepts the APK's ``did``/``ip`` reply shape."""
+    background_discovery = _load_background_discovery()
+    found = []
+    protocol = background_discovery._ApkUdpDiscoveryProtocol(found.append)
     protocol.datagram_received(
         b'{"msg":{"did":"plug-1","ip":"10.0.0.41","pid":"hjk1jk","dtp":"05"}}\r\n',
         ("10.0.0.41", 6095),
@@ -272,61 +285,43 @@ def test_apk_udp_discovery_cache_keeps_valid_device_identity_and_address() -> No
         ("10.0.0.99", 6095),
     )
 
-    # Mirrors the APK cache: newer replies replace the older IP for the DID.
-    assert protocol.devices == {"plug-1": "10.0.0.42"}
+    # The callback receives every valid reply; the service itself indexes the
+    # cache by DID and replaces stale addresses.
+    assert [(item.device_id, item.ip_address) for item in found] == [
+        ("plug-1", "10.0.0.41"),
+        ("plug-1", "10.0.0.42"),
+    ]
 
 
-def test_setup_discovery_sends_the_apk_udp_request_before_tcp_fallback() -> None:
-    """Automatic setup must emit the same UDP/6095 discovery frame as the APK."""
-    _load_api()
-    from cozylife_local import network_discovery
+def test_shared_udp_listener_routes_a_known_did_without_a_second_socket() -> None:
+    """Known entries receive the APK-advertised address from the one cache."""
+    background_discovery = _load_background_discovery()
 
     async def exercise() -> None:
-        sent: list[tuple[bytes, tuple[str, int]]] = []
-        sleeps: list[float] = []
+        received: list[str] = []
 
-        class FakeTransport:
-            def sendto(self, data: bytes, address: tuple[str, int]) -> None:
-                sent.append((data, address))
-                protocol.datagram_received(
-                    b'{"msg":{"did":"metered-plug","ip":"10.0.0.41"}}\r\n',
-                    ("10.0.0.41", 6095),
-                )
-                protocol.datagram_received(
-                    b'{"msg":{"did":"outside","ip":"10.0.1.9"}}\r\n',
-                    ("10.0.1.9", 6095),
-                )
+        async def handle_address(ip_address: str) -> None:
+            received.append(ip_address)
 
-            def close(self) -> None:
-                return None
+        service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
+        service._devices = {}
+        service._entry_callbacks = {"plug-1": handle_address}
+        service._flow_started_for = set()
+        service._scan_in_progress = 0
+        service.hass = types.SimpleNamespace(async_create_task=asyncio.create_task)
 
-        class FakeLoop:
-            async def create_datagram_endpoint(self, factory, **_kwargs):
-                nonlocal protocol
-                protocol = factory()
-                return FakeTransport(), protocol
-
-        async def fake_sleep(delay: float) -> None:
-            sleeps.append(delay)
-
-        protocol = None
-        with (
-            patch.object(network_discovery.asyncio, "get_running_loop", return_value=FakeLoop()),
-            patch.object(network_discovery.asyncio, "sleep", fake_sleep),
-        ):
-            addresses = await network_discovery._async_discover_udp_addresses(
-                [network_discovery.ipaddress.ip_network("10.0.0.0/24")]
+        service._handle_device(
+            background_discovery.UdpDiscoveredDevice(
+                device_id="plug-1",
+                ip_address="10.0.0.42",
+                pid="hjk1jk",
+                device_type_code="05",
             )
+        )
+        await asyncio.sleep(0)
 
-        assert addresses == ["10.0.0.41"]
-        assert sleeps == [5.0]
-        assert sent[0][1] == ("255.255.255.255", 6095)
-        assert json.loads(sent[0][0].decode()) | {"sn": "ignored"} == {
-            "cmd": 0,
-            "pv": 0,
-            "sn": "ignored",
-            "msg": {},
-        }
+        assert received == ["10.0.0.42"]
+        assert service._devices["plug-1"][0].ip_address == "10.0.0.42"
 
     asyncio.run(exercise())
 
@@ -522,21 +517,22 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
             return True
 
         coordinator.device.async_update_device_info = update_device_info
-        stopped: list[bool] = []
+        unregistered: list[str] = []
+        registered: list[tuple[str, object]] = []
+        discovery = types.SimpleNamespace(
+            unregister_device=unregistered.append,
+            register_device=lambda device_id, callback: registered.append(
+                (device_id, callback)
+            ),
+        )
 
-        async def stop() -> None:
-            stopped.append(True)
+        async def get_discovery(_hass):
+            return discovery
 
-        coordinator._udp_discovery = types.SimpleNamespace(async_stop=stop)
-        restarted: list[bool] = []
-
-        async def start_discovery() -> None:
-            restarted.append(True)
-
-        coordinator.async_start_discovery = start_discovery
         coordinator._identity_refresh_task = object()
 
-        await coordinator._async_promote_sensor_identity()
+        with patch("cozylife_local.coordinator.async_get_background_discovery", get_discovery):
+            await coordinator._async_promote_sensor_identity()
 
         assert updates == [
             {
@@ -546,8 +542,10 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
                 "dpids": ["4", "8", "9", "14"],
             }
         ]
-        assert stopped == [True]
-        assert restarted == [True]
+        assert unregistered == ["sleeping_sensor_Z4tRml_10.0.0.115"]
+        assert registered == [
+            ("76608860c4d7fdd94485", coordinator.async_handle_discovered_address)
+        ]
         assert coordinator._identity_refresh_task is None
 
     asyncio.run(exercise())

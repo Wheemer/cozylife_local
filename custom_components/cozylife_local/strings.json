@@ -25,6 +25,10 @@
         "data": {
           "device": "Select Device"
         }
+      },
+      "confirm_discovery": {
+        "title": "CozyLife device found",
+        "description": "A local CozyLife UDP announcement found **{device}** at **{ip_address}**. Confirm to verify it through its local connection and add it."
       }
     },
     "error": {
@@ -40,7 +44,8 @@
       "unknown": "An unexpected system error occurred during device handshake. Please check your Home Assistant system logs."
     },
     "abort": {
-      "already_configured": "This CozyLife device is already configured in Home Assistant."
+      "already_configured": "This CozyLife device is already configured in Home Assistant.",
+      "invalid_discovery": "The discovered CozyLife announcement did not contain a valid device identity or IPv4 address."
     }
   },
   "options": {

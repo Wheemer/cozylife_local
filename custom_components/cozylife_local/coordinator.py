@@ -7,6 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .background_discovery import async_get_background_discovery
 from .const import (
     LIGHT_COUNTDOWN,
     PLUG_CURRENT,
@@ -17,7 +18,7 @@ from .const import (
     SENSOR_HUMIDITY,
     SENSOR_TEMPERATURE,
 )
-from .cozylife_api import CozyLifeDevice, CozyLifeUdpDiscovery
+from .cozylife_api import CozyLifeDevice
 from .discovery import classify_device
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,10 +26,8 @@ _UPDATE_LOGGER = logging.getLogger(f"{__name__}.updates")
 _UPDATE_LOGGER.setLevel(logging.INFO)
 
 UPDATE_INTERVAL = timedelta(seconds=30)
-SENSOR_DISCOVERY_INTERVAL_SECONDS = 10.0
 SENSOR_CONNECT_TIMEOUT_SECONDS = 1.0
 SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.5
-DEVICE_DISCOVERY_INTERVAL_SECONDS = 30.0
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
@@ -96,7 +95,6 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=entry,
         )
         self.device = device
-        self._udp_discovery: CozyLifeUdpDiscovery | None = None
         self._sensor_probe_task: asyncio.Task[None] | None = None
         self._identity_refresh_task: asyncio.Task[None] | None = None
         if self._uses_sensor_polling and self._sensor_probe_task is None:
@@ -108,20 +106,12 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._entry = entry
 
     async def async_start_discovery(self) -> None:
-        """Start local UDP address discovery after cached device info loads."""
-        if not self.device.device_id or self._udp_discovery:
-            return
-        interval = (
-            SENSOR_DISCOVERY_INTERVAL_SECONDS
-            if self._uses_sensor_polling
-            else DEVICE_DISCOVERY_INTERVAL_SECONDS
-        )
-        self._udp_discovery = CozyLifeUdpDiscovery(
-            self.device.device_id,
-            self._async_handle_discovered_address,
-            interval,
-        )
-        await self._udp_discovery.async_start()
+        """Start sensor wake probing after entry setup.
+
+        UDP reception belongs to the integration-wide APK-style listener. The
+        entry registers its DID with that listener during setup, avoiding one
+        socket and one broadcast schedule per configured device.
+        """
         if self._uses_sensor_polling:
             # Keep the wake-window work outside Home Assistant's startup task
             # tree, but serialize the actual connection attempts.
@@ -141,7 +131,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if remaining > 0:
                 await asyncio.sleep(remaining)
 
-    async def _async_handle_discovered_address(self, ip_address: str) -> None:
+    async def async_handle_discovered_address(self, ip_address: str) -> None:
         """Use an APK discovery reply to refresh this entry's local address."""
         moved = await self.device.async_update_ip_address(ip_address)
         if moved:
@@ -194,6 +184,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not device_id or device_id == self._entry.data.get("device_id"):
                 return
 
+            old_device_id = self._entry.data.get("device_id")
             data = {
                 **self._entry.data,
                 "device_id": device_id,
@@ -203,10 +194,10 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data["dpids"] = self.device.dpid
             self.hass.config_entries.async_update_entry(self._entry, data=data)
 
-            if self._udp_discovery:
-                await self._udp_discovery.async_stop()
-                self._udp_discovery = None
-            await self.async_start_discovery()
+            discovery = await async_get_background_discovery(self.hass)
+            if old_device_id:
+                discovery.unregister_device(old_device_id)
+            discovery.register_device(device_id, self.async_handle_discovered_address)
             _LOGGER.info(
                 "Verified local device ID for sleeping CozyLife sensor at %s",
                 self.device.ip_address,
@@ -220,9 +211,6 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_close(self) -> None:
         """Release the device reader owned by this config entry."""
-        if self._udp_discovery:
-            await self._udp_discovery.async_stop()
-            self._udp_discovery = None
         if self._sensor_probe_task:
             self._sensor_probe_task.cancel()
             try:

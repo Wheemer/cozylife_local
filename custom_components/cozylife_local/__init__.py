@@ -2,14 +2,32 @@
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import HomeAssistant, callback
 
+from .background_discovery import (
+    DATA_DISCOVERY_SERVICE,
+    async_get_background_discovery,
+)
 from .const import DOMAIN, PLATFORMS
 from .coordinator import CozyLifeCoordinator
 from .cozylife_api import CozyLifeDevice
 from .discovery import async_load_model_catalog
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
+    """Set up the integration-wide UDP listener lifecycle."""
+
+    @callback
+    def _async_stop_discovery(_event) -> None:
+        service = hass.data.get(DOMAIN, {}).get(DATA_DISCOVERY_SERVICE)
+        if service is not None:
+            hass.async_create_task(service.async_stop())
+
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop_discovery)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -25,6 +43,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
     await async_load_model_catalog(hass)
+    try:
+        discovery = await async_get_background_discovery(hass)
+    except OSError as err:
+        # UDP discovery is an enhancement; a transient socket failure must
+        # not make an already configured local device disappear at startup.
+        _LOGGER.warning("Unable to start shared CozyLife UDP discovery: %s", err)
+        discovery = None
 
     ip_address = entry.data["ip_address"]
 
@@ -63,10 +88,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Create a coordinator for this device
     coordinator = CozyLifeCoordinator(hass, device, entry)
-    # UDP setup is best-effort local discovery.  Do not make the config entry
-    # (and therefore every platform entity) wait for a datagram socket to be
-    # created; the task owns the listener and begins the status loop when it
-    # is ready.
+    if discovery is not None and device.device_id:
+        discovery.register_device(
+            device.device_id,
+            coordinator.async_handle_discovered_address,
+        )
     hass.async_create_task(coordinator.async_start_discovery())
 
     if coordinator.is_sensor:
@@ -100,6 +126,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        service = hass.data[DOMAIN].get(DATA_DISCOVERY_SERVICE)
+        if service is not None and coordinator.device.device_id:
+            service.unregister_device(coordinator.device.device_id)
         await coordinator.async_close()
 
     return unload_ok

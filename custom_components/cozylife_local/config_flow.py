@@ -132,6 +132,63 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=DATA_SCHEMA, errors=errors
         )
 
+    async def async_step_integration_discovery(
+        self,
+        discovery_info: Dict[str, Any],
+    ) -> FlowResult:
+        """Offer an APK-announced device that is not configured yet.
+
+        UDP only identifies a candidate. Confirmation still performs the
+        device's normal local TCP/5555 handshake before an entry is created.
+        """
+        device_id = discovery_info.get("device_id")
+        ip_address = discovery_info.get("ip_address")
+        if not isinstance(device_id, str) or not isinstance(ip_address, str):
+            return self.async_abort(reason="invalid_discovery")
+
+        try:
+            ipaddress.IPv4Address(ip_address)
+        except ipaddress.AddressValueError:
+            return self.async_abort(reason="invalid_discovery")
+
+        await self.async_set_unique_id(device_id)
+        self._abort_if_unique_id_configured()
+        self._udp_discovery_info = discovery_info
+        return await self.async_step_confirm_discovery()
+
+    async def async_step_confirm_discovery(
+        self,
+        user_input: Optional[Dict[str, Any]] = None,
+    ) -> FlowResult:
+        """Confirm adding a device discovered by the shared UDP listener."""
+        discovery_info = getattr(self, "_udp_discovery_info", None)
+        if not isinstance(discovery_info, dict):
+            return self.async_abort(reason="invalid_discovery")
+
+        ip_address = discovery_info["ip_address"]
+        if user_input is not None:
+            return await self._async_create_entry_from_ip(
+                ip_address,
+                DEFAULT_MIN_KELVIN,
+                DEFAULT_MAX_KELVIN,
+                {"ip_address": ip_address},
+            )
+
+        await async_load_model_catalog(self.hass)
+        model = get_model_info(discovery_info.get("pid"))
+        device_name = (
+            model.model_name
+            if model is not None and model.model_name
+            else "CozyLife device"
+        )
+        return self.async_show_form(
+            step_id="confirm_discovery",
+            description_placeholders={
+                "device": device_name,
+                "ip_address": ip_address,
+            },
+        )
+
     async def _async_create_sleeping_sensor_entry(
         self,
         ip_address: str,

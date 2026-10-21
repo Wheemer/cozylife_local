@@ -4,18 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-import json
 import logging
-import time
 from dataclasses import dataclass
 
 from homeassistant.core import HomeAssistant
 
-from .cozylife_api import (
-    COZYLIFE_PORT,
-    COZYLIFE_UDP_DISCOVERY_PORT,
-    CozyLifeDevice,
-)
+from .background_discovery import async_get_background_discovery
+from .cozylife_api import COZYLIFE_PORT, CozyLifeDevice
 from .discovery import async_load_model_catalog
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,11 +20,6 @@ MAX_SCAN_HOSTS = 512
 SCAN_CONNECT_TIMEOUT = 0.75
 DEVICE_INFO_TIMEOUT = 1.5
 SCAN_CONCURRENCY = 64
-UDP_DISCOVERY_WINDOW_SECONDS = 5.0
-# The APK starts a search with one broadcast, then emits sixteen more when the
-# active network changes to Wi-Fi. Keep that full burst on one socket so every
-# reply returns to the listener that originated the request.
-APK_UDP_DISCOVERY_BROADCAST_COUNT = 17
 
 
 @dataclass(frozen=True)
@@ -60,31 +50,6 @@ class NoNetworkAvailable(ValueError):
     """Raised when no local IPv4 network can be detected."""
 
 
-class _ApkUdpDiscoveryProtocol(asyncio.DatagramProtocol):
-    """Collect the same UDP discovery replies that the Cozy Life APK caches."""
-
-    def __init__(self) -> None:
-        self.devices: dict[str, str] = {}
-
-    def datagram_received(self, data: bytes, _addr: tuple[str, int]) -> None:
-        """Store valid ``did``/``ip`` replies from a Cozy Life device."""
-        try:
-            frame = json.loads(data.decode("utf-8").split("\r\n", 1)[0])
-            message = frame["msg"]
-            device_id = message["did"]
-            ip_address = message["ip"]
-            if not isinstance(device_id, str) or not device_id:
-                return
-            if not isinstance(ip_address, str):
-                return
-            ipaddress.IPv4Address(ip_address)
-        except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
-            return
-
-        # The APK indexes this cache by device ID, replacing an older address.
-        self.devices[device_id] = ip_address
-
-
 async def async_discover_devices(
     hass: HomeAssistant,
     network_cidr: str = AUTO_NETWORK,
@@ -98,7 +63,7 @@ async def async_discover_devices(
     # not a TCP port sweep. A device that answers that broadcast is the app's
     # positive proof that TCP/5555 is its local command endpoint, so query it
     # directly without discarding it based on a preliminary TCP connect.
-    udp_addresses = await _async_discover_udp_addresses(networks)
+    udp_addresses = await _async_discover_udp_addresses(hass, networks)
     udp_results = await asyncio.gather(
         *(_async_query_discovered_host(ip_address) for ip_address in udp_addresses)
     )
@@ -132,60 +97,26 @@ async def async_discover_devices(
 
 
 async def _async_discover_udp_addresses(
+    hass: HomeAssistant,
     networks: list[ipaddress.IPv4Network],
 ) -> list[str]:
-    """Discover local device addresses via the APK's UDP/6095 cmd-0 exchange."""
-    loop = asyncio.get_running_loop()
-    transport: asyncio.DatagramTransport | None = None
-    protocol: _ApkUdpDiscoveryProtocol | None = None
+    """Use the integration's APK-style shared UDP listener for a scan."""
     try:
-        transport, protocol = await loop.create_datagram_endpoint(
-            _ApkUdpDiscoveryProtocol,
-            local_addr=("0.0.0.0", 0),
-            allow_broadcast=True,
-        )
-        sent_count = _send_apk_udp_discovery_burst(transport)
-        _LOGGER.info(
-            "CozyLife UDP discovery sent %s APK-format broadcasts to "
-            "255.255.255.255:%s and is listening for replies for %s seconds",
-            sent_count,
-            COZYLIFE_UDP_DISCOVERY_PORT,
-            UDP_DISCOVERY_WINDOW_SECONDS,
-        )
-        await asyncio.sleep(UDP_DISCOVERY_WINDOW_SECONDS)
+        announcements = await (await async_get_background_discovery(hass)).async_scan()
     except OSError as err:
         _LOGGER.debug("CozyLife UDP discovery was unavailable: %s", err)
         return []
-    finally:
-        if transport is not None:
-            transport.close()
-
-    if protocol is None:
-        return []
     return sorted(
         {
-            address
-            for address in protocol.devices.values()
-            if any(ipaddress.IPv4Address(address) in network for network in networks)
+            announcement.ip_address
+            for announcement in announcements
+            if any(
+                ipaddress.IPv4Address(announcement.ip_address) in network
+                for network in networks
+            )
         },
         key=lambda address: tuple(int(part) for part in address.split(".")),
     )
-
-
-def _send_apk_udp_discovery_burst(transport: asyncio.DatagramTransport) -> int:
-    """Send the APK's local UDP discovery burst on an existing receive socket."""
-    for _ in range(APK_UDP_DISCOVERY_BROADCAST_COUNT):
-        request = {
-            "cmd": 0,
-            "pv": 0,
-            "sn": str(int(time.time() * 1000)),
-            "msg": {},
-        }
-        transport.sendto(
-            (json.dumps(request, separators=(",", ":")) + "\r\n").encode(),
-            ("255.255.255.255", COZYLIFE_UDP_DISCOVERY_PORT),
-        )
-    return APK_UDP_DISCOVERY_BROADCAST_COUNT
 
 
 async def _async_get_scan_networks(
