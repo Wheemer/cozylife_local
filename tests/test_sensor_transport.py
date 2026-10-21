@@ -193,8 +193,8 @@ def test_udp_discovery_shows_normal_confirmation_before_adding() -> None:
     asyncio.run(exercise())
 
 
-def test_confirmed_udp_sleeping_sensor_needs_no_tcp_handshake() -> None:
-    """A confirmed sensor reply is enough to begin known-IP probing."""
+def test_confirming_udp_sleeping_sensor_needs_no_tcp_handshake() -> None:
+    """The card's Add action uses saved UDP identity for a sleeping sensor."""
     config_flow = _load_config_flow()
 
     async def exercise() -> None:
@@ -202,9 +202,11 @@ def test_confirmed_udp_sleeping_sensor_needs_no_tcp_handshake() -> None:
         flow.hass = object()
         entries: list[dict] = []
         tcp_handshakes: list[object] = []
+        cards: list[dict] = []
+        unique_ids: list[str] = []
 
-        async def set_unique_id(_unique_id: str) -> None:
-            return None
+        async def set_unique_id(unique_id: str) -> None:
+            unique_ids.append(unique_id)
 
         async def load_catalog(_hass) -> None:
             return None
@@ -216,6 +218,7 @@ def test_confirmed_udp_sleeping_sensor_needs_no_tcp_handshake() -> None:
         flow.async_set_unique_id = set_unique_id
         flow._abort_if_unique_id_configured = lambda: None
         flow.async_create_entry = lambda **kwargs: entries.append(kwargs) or kwargs
+        flow.async_show_form = lambda **kwargs: cards.append(kwargs) or kwargs
         flow._async_create_entry_from_ip = tcp_handshake
         model = types.SimpleNamespace(
             model_name="CozyLife Temp/Humidity",
@@ -236,14 +239,18 @@ def test_confirmed_udp_sleeping_sensor_needs_no_tcp_handshake() -> None:
                 lambda *_args: classification,
             ),
         ):
-            result = await flow._async_create_discovered_entry(
+            discovery_card = await flow.async_step_integration_discovery(
                 {
                     "device_id": "sensor-1", "ip_address": "10.0.0.115",
                     "pid": "Z4tRml", "device_type_code": "03",
                 }
             )
+            result = await flow.async_step_confirm_discovery({})
 
         assert tcp_handshakes == []
+        assert unique_ids == ["sensor-1"]
+        assert discovery_card["step_id"] == "confirm_discovery"
+        assert cards == [discovery_card]
         assert entries == [
             {
                 "title": "CozyLife Temp/Humidity",
