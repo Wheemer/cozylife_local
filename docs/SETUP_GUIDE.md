@@ -97,9 +97,9 @@ Once your device is connected to Wi-Fi, add CozyLife Local to Home Assistant:
 Settings ➔ Devices & Services ➔ + Add Integration ➔ CozyLife Local
 ```
 
-Click **Submit**. The integration creates one persistent discovery controller with no IP address, CIDR, or sensor-profile fields. It sends the APK-style UDP/6095 discovery frame every 500 ms. A newly announced device appears in Home Assistant's normal discovered-device card; click **Add** to create its entry. A powered device is verified through local TCP/5555 at that point.
+Click **Submit**. The integration creates one persistent discovery controller with no IP address, CIDR, or sensor-profile fields. It sends the APK-style UDP/6095 discovery frame every 500 ms. A newly announced supported Wi-Fi device appears in Home Assistant's normal discovered-device card; click **Add** to create its entry from the captured DID, PID, and IP plus the APK model catalogue DPID profile. Adding does not require a synchronous TCP inventory reply.
 
-For a supported sleeping temperature/humidity sensor, its UDP announcement supplies the PID and local address. When you click **Add**, the integration uses that saved announcement rather than asking the sensor to wake a second time, then begins the same 500 ms known-address status probing. It does not assume a fixed wake or report schedule.
+For a supported sleeping temperature/humidity sensor, the same saved announcement creates the entry and then begins the 500 ms known-address status probing. It does not assume a fixed wake or report schedule.
 
 After setup, the integration exposes the configured local IP address as a diagnostic sensor on the Home Assistant device page. Use that visible IP when checking DHCP reservations, router firewall rules, or direct port `5555` connectivity.
 

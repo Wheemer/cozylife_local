@@ -27,7 +27,7 @@
           "min_kelvin": "Minimum Kelvin (Warm White)"
         },
         "data_description": {
-          "enable_debug": "Streams complete local packet handshakes to Home Assistant logs. Extremely helpful for troubleshooting unrecognized device models.",
+          "enable_debug": "Streams complete local packet handshakes to Home Assistant logs. Helpful for diagnosing local transport or entity-mapping problems.",
           "min_kelvin": "Adjust the warmest color temperature limit (Kelvin) for this light bulb.",
           "max_kelvin": "Adjust the coolest color temperature limit (Kelvin) for this light bulb."
         }
