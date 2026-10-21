@@ -254,7 +254,8 @@ def test_shared_apk_udp_cache_keeps_valid_device_identity_and_address() -> None:
     )
     protocol.datagram_received(
         b'{"msg":{"did":"plug-1","ip":"10.0.0.42"}}\r\n',
-        ("10.0.0.42", 6095),
+        # The APK caches msg.ip, not the UDP sender address.
+        ("10.0.0.99", 6095),
     )
     protocol.datagram_received(
         b'{"msg":{"did":"bad","ip":"not-an-address"}}\r\n',
