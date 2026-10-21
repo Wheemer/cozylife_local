@@ -82,8 +82,18 @@ class CozyLifeBackgroundDiscovery:
         self._transport: asyncio.DatagramTransport | None = None
         self._broadcast_task: asyncio.Task[None] | None = None
         self._devices: dict[str, tuple[UdpDiscoveredDevice, float]] = {}
-        self._entry_callbacks: dict[str, Callable[[str], Awaitable[None]]] = {}
+        # Each callback is owned by a config entry.  Keeping that ownership is
+        # important when a user removes and immediately re-adds the same
+        # device: completion of the old entry's unload must not unregister the
+        # callback just installed by the new entry.
+        self._entry_callbacks: dict[
+            str, tuple[str, Callable[[str], Awaitable[None]]]
+        ] = {}
         self._address_callbacks: dict[str, Callable[[str], Awaitable[None]]] = {}
+        # UDP replies arrive repeatedly.  One native discovery card per DID is
+        # sufficient until it is either configured (which clears this set in
+        # register_device) or Home Assistant restarts.
+        self._pending_discovery_ids: set[str] = set()
 
     async def async_start(self) -> None:
         """Open the APK-style receive socket and begin its Wi-Fi cadence."""
@@ -132,14 +142,18 @@ class CozyLifeBackgroundDiscovery:
     def register_device(
         self,
         device_id: str,
+        entry_id: str,
         callback: Callable[[str], Awaitable[None]],
     ) -> None:
         """Route later APK UDP replies for one configured DID to its entry."""
-        self._entry_callbacks[device_id] = callback
+        self._pending_discovery_ids.discard(device_id)
+        self._entry_callbacks[device_id] = (entry_id, callback)
 
-    def unregister_device(self, device_id: str) -> None:
-        """Stop routing replies to an unloaded config entry."""
-        self._entry_callbacks.pop(device_id, None)
+    def unregister_device(self, device_id: str, entry_id: str) -> None:
+        """Stop routing replies only when this entry owns the registration."""
+        registered = self._entry_callbacks.get(device_id)
+        if registered is not None and registered[0] == entry_id:
+            self._entry_callbacks.pop(device_id, None)
 
     def register_address(
         self,
@@ -174,7 +188,8 @@ class CozyLifeBackgroundDiscovery:
     def _handle_device(self, device: UdpDiscoveredDevice) -> None:
         """Cache an APK reply, refresh known entries, or start one discovery flow."""
         self._devices[device.device_id] = (device, time.monotonic())
-        callback = self._entry_callbacks.get(device.device_id)
+        registration = self._entry_callbacks.get(device.device_id)
+        callback = registration[1] if registration is not None else None
         route = "device ID"
         if callback is None:
             callback = self._address_callbacks.get(device.ip_address)
@@ -190,12 +205,21 @@ class CozyLifeBackgroundDiscovery:
             return
 
         if self._is_configured(device.device_id, device.ip_address):
+            self._pending_discovery_ids.discard(device.device_id)
             _LOGGER.debug(
                 "Ignoring CozyLife UDP announcement for already configured DID %s at %s",
                 device.device_id,
                 device.ip_address,
             )
             return
+        if device.device_id in self._pending_discovery_ids:
+            _LOGGER.debug(
+                "Ignoring repeated CozyLife discovery announcement for pending DID %s at %s",
+                device.device_id,
+                device.ip_address,
+            )
+            return
+        self._pending_discovery_ids.add(device.device_id)
         _LOGGER.debug(
             "Creating CozyLife discovery flow for DID %s at %s",
             device.device_id,

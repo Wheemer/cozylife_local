@@ -147,6 +147,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if discovery is not None and device.device_id:
         discovery.register_device(
             device.device_id,
+            entry.entry_id,
             coordinator.async_handle_discovered_address,
         )
         if coordinator.is_sensor and device.device_id.startswith("sleeping_sensor_"):
@@ -207,7 +208,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
         service = hass.data[DOMAIN].get(DATA_DISCOVERY_SERVICE)
         if service is not None and coordinator.device.device_id:
-            service.unregister_device(coordinator.device.device_id)
+            service.unregister_device(coordinator.device.device_id, entry.entry_id)
             service.unregister_address(entry.data.get("ip_address", ""))
         await coordinator.async_close()
 

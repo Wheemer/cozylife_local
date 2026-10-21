@@ -498,8 +498,9 @@ def test_shared_udp_listener_routes_a_known_did_without_a_second_socket() -> Non
 
         service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
         service._devices = {}
-        service._entry_callbacks = {"plug-1": handle_address}
+        service._entry_callbacks = {"plug-1": ("entry-1", handle_address)}
         service._address_callbacks = {}
+        service._pending_discovery_ids = set()
         service.hass = types.SimpleNamespace(async_create_task=asyncio.create_task)
 
         service._handle_device(
@@ -629,6 +630,7 @@ def test_shared_udp_listener_uses_home_assistant_discovery_flow_helper() -> None
     service._devices = {}
     service._entry_callbacks = {}
     service._address_callbacks = {}
+    service._pending_discovery_ids = set()
 
     def create_flow(flow_hass, domain, *, context, data) -> None:
         calls.append((flow_hass, domain, context, data))
@@ -1050,6 +1052,7 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
     async def exercise() -> None:
         coordinator = object.__new__(CozyLifeCoordinator)
         entry = types.SimpleNamespace(
+            entry_id="sensor-entry",
             data={
                 "device_id": "sleeping_sensor_Z4tRml_10.0.0.115",
                 "ip_address": "10.0.0.115",
@@ -1084,10 +1087,12 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
         unregistered_addresses: list[str] = []
         registered: list[tuple[str, object]] = []
         discovery = types.SimpleNamespace(
-            unregister_device=unregistered.append,
+            unregister_device=lambda device_id, entry_id: unregistered.append(
+                (device_id, entry_id)
+            ),
             unregister_address=unregistered_addresses.append,
-            register_device=lambda device_id, callback: registered.append(
-                (device_id, callback)
+            register_device=lambda device_id, entry_id, callback: registered.append(
+                (device_id, entry_id, callback)
             ),
         )
 
@@ -1108,10 +1113,16 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
                 "dpids": ["4", "8", "9", "14"],
             }
         ]
-        assert unregistered == ["sleeping_sensor_Z4tRml_10.0.0.115"]
+        assert unregistered == [
+            ("sleeping_sensor_Z4tRml_10.0.0.115", "sensor-entry")
+        ]
         assert unregistered_addresses == ["10.0.0.115"]
         assert registered == [
-            ("76608860c4d7fdd94485", coordinator.async_handle_discovered_address)
+            (
+                "76608860c4d7fdd94485",
+                "sensor-entry",
+                coordinator.async_handle_discovered_address,
+            )
         ]
         assert coordinator._identity_refresh_task is None
 
@@ -1177,3 +1188,53 @@ def test_sleeping_sensor_rejects_a_mismatched_local_identity() -> None:
         assert coordinator._identity_refresh_task is None
 
     asyncio.run(exercise())
+
+
+def test_udp_discovery_registration_is_owner_safe_across_remove_and_readd() -> None:
+    """An unloading old entry cannot erase the new entry's DID callback."""
+    background_discovery = _load_background_discovery()
+    service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
+    service._entry_callbacks = {}
+    service._pending_discovery_ids = set()
+
+    async def old_callback(_ip_address: str) -> None:
+        return None
+
+    async def new_callback(_ip_address: str) -> None:
+        return None
+
+    service.register_device("plug-1", "old-entry", old_callback)
+    service.register_device("plug-1", "new-entry", new_callback)
+    service.unregister_device("plug-1", "old-entry")
+
+    assert service._entry_callbacks["plug-1"] == ("new-entry", new_callback)
+
+
+def test_udp_discovery_only_starts_one_pending_flow_per_did() -> None:
+    """Repeated UDP replies do not repeatedly create discovery flows."""
+    background_discovery = _load_background_discovery()
+    calls: list[object] = []
+    service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
+    service.hass = types.SimpleNamespace(
+        config_entries=types.SimpleNamespace(async_entries=lambda _domain: [])
+    )
+    service._devices = {}
+    service._entry_callbacks = {}
+    service._address_callbacks = {}
+    service._pending_discovery_ids = set()
+
+    device = background_discovery.UdpDiscoveredDevice(
+        device_id="plug-1",
+        ip_address="10.0.0.44",
+        pid="hjk1jk",
+        device_type_code="05",
+    )
+    with patch.object(
+        background_discovery.discovery_flow,
+        "async_create_flow",
+        lambda *_args, **_kwargs: calls.append(True),
+    ):
+        service._handle_device(device)
+        service._handle_device(device)
+
+    assert calls == [True]
