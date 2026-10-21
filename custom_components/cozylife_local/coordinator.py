@@ -17,8 +17,9 @@ _UPDATE_LOGGER = logging.getLogger(f"{__name__}.updates")
 _UPDATE_LOGGER.setLevel(logging.INFO)
 
 UPDATE_INTERVAL = timedelta(seconds=30)
-# The CozyLife Android client configures a one-second local TCP connect bound.
-SENSOR_CONNECT_TIMEOUT_SECONDS = 1.0
+# These are local attempt bounds, not a claimed sensor wake or report schedule.
+SENSOR_CONNECT_TIMEOUT_SECONDS = 0.2
+SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.5
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
@@ -77,9 +78,11 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=entry,
         )
         self.device = device
+        self._sensor_probe_task: asyncio.Task[None] | None = None
         self._identity_refresh_task: asyncio.Task[None] | None = None
         if self._uses_sensor_polling:
-            # Match the Android client's TCP_GLOAL_CONNECT_TIMEOUT.
+            # Bound a failed local attempt so a sleeping device cannot consume
+            # the next half-second wake-window attempt.
             self.device.set_timeout(SENSOR_CONNECT_TIMEOUT_SECONDS)
 
         # The APK routes every valid local TCP frame to the device listener by
@@ -90,12 +93,28 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._entry = entry
 
     async def async_start_discovery(self) -> None:
-        """Keep the legacy entry hook while shared discovery owns transport.
+        """Start local wake-window attempts for a configured sensor entry.
 
-        UDP reception belongs to the integration-wide APK-style listener. The
-        entry registers its DID with that listener during setup, avoiding one
-        socket and one broadcast schedule per configured device.
+        The sensor firmware controls when it wakes and reports. This task only
+        keeps a lightweight local status request available at a fixed host-side
+        cadence; it does not infer any sensor reporting interval.
         """
+        if self._uses_sensor_polling and self._sensor_probe_task is None:
+            self._sensor_probe_task = self.hass.async_create_background_task(
+                self._async_probe_sensor_wake_window(),
+                "cozylife sensor wake-window probing",
+            )
+
+    async def _async_probe_sensor_wake_window(self) -> None:
+        """Issue one serialized local status request every half second."""
+        while True:
+            started = self.hass.loop.time()
+            await self.device.async_send_status()
+            remaining = SENSOR_WAKE_PROBE_INTERVAL_SECONDS - (
+                self.hass.loop.time() - started
+            )
+            if remaining > 0:
+                await asyncio.sleep(remaining)
 
     async def async_handle_discovered_address(self, ip_address: str) -> None:
         """Use an APK discovery reply to refresh this entry's local address."""
@@ -186,6 +205,13 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_close(self) -> None:
         """Release the device reader owned by this config entry."""
+        if self._sensor_probe_task:
+            self._sensor_probe_task.cancel()
+            try:
+                await self._sensor_probe_task
+            except asyncio.CancelledError:
+                pass
+            self._sensor_probe_task = None
         if self._identity_refresh_task:
             self._identity_refresh_task.cancel()
             try:

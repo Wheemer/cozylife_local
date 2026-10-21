@@ -23,9 +23,9 @@ _LOGGER = logging.getLogger(__name__)
 DATA_DISCOVERY_SERVICE = "background_udp_discovery"
 DATA_DISCOVERY_LOCK = "background_udp_discovery_lock"
 DATA_DISCOVERY_STOP_UNSUB = "background_udp_discovery_stop_unsub"
-# AppDeamon runs UdpBoardcastChecker once every 10 seconds. It sends one
-# command-0 discovery request through the shared Wi-Fi UDP socket.
-DISCOVERY_BROADCAST_INTERVAL_SECONDS = 10.0
+# This is Home Assistant's local discovery attempt cadence. It is not a
+# claimed sensor report schedule: a battery sensor decides its own wakeups.
+DISCOVERY_BROADCAST_INTERVAL_SECONDS = 0.5
 APK_NETWORK_CHANGE_BROADCAST_COUNT = 1
 
 
@@ -154,7 +154,7 @@ class CozyLifeBackgroundDiscovery:
         self._address_callbacks.pop(ip_address, None)
 
     async def _async_broadcast_loop(self) -> None:
-        """Run the APK daemon's ten-second UDP discovery cycle."""
+        """Keep a shared discovery request present across sensor wake windows."""
         while True:
             await asyncio.sleep(DISCOVERY_BROADCAST_INTERVAL_SECONDS)
             self._send_broadcasts(1)

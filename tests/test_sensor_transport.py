@@ -430,10 +430,10 @@ def test_status_send_reconnects_after_the_peer_closes() -> None:
     asyncio.run(exercise())
 
 
-def test_shared_udp_discovery_uses_the_apk_daemon_cadence_on_one_socket() -> None:
-    """The shared listener emits one request per APK daemon cycle."""
+def test_shared_udp_discovery_uses_the_shared_wake_window_cadence() -> None:
+    """The shared listener emits a request every half second."""
     background_discovery = _load_background_discovery()
-    assert background_discovery.DISCOVERY_BROADCAST_INTERVAL_SECONDS == 10.0
+    assert background_discovery.DISCOVERY_BROADCAST_INTERVAL_SECONDS == 0.5
 
     class FakeTransport:
         def __init__(self) -> None:
