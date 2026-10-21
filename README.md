@@ -46,7 +46,7 @@ We are still looking for reports to expand coverage for:
 ## Key Features
 
 *   ⚡ **100% Local Control**: Zero reliance on the CozyLife cloud. All control commands and sensor status requests happen locally over your Wi-Fi network.
-*   🔌 **APK-Derived Local Discovery**: Uses one shared UDP/6095 listener and the CozyLife app's `cmd:0` discovery frames to discover devices. Setup can scan a configurable IPv4 subnet; unconfigured devices announced while the integration is running are offered for confirmation.
+*   🔌 **APK-Derived Local Discovery**: Uses one shared UDP/6095 listener and the CozyLife app's `cmd:0` discovery frames to discover devices. Opening its setup flow or running an entry activates the listener; unconfigured announced devices are offered for confirmation.
 *   📍 **Static IP & Sleep Sensor Modes**: Easily provision devices individually via single static IP addresses. Includes a specialized "Sleeping temp/humidity sensor" mode that leverages cached metadata to safely pre-build battery-powered entities before the hardware wakes.
 *   🧭 **Visible Device IP Diagnostics**: Exposes each configured device's local IP address as a diagnostic sensor in Home Assistant, making router checks and troubleshooting easier.
 *   🎛️ **Multi-Gang Switch Bitmasks**: Native, low-level bitmask control on DPID 1 ensures multi-gang rockers (e.g., double or triple rocker switches) act as individual, responsive entities.
@@ -90,7 +90,7 @@ Once HACS has completed installation and Home Assistant has restarted:
    * **Manual Setup**: Input the static IP address of your device.
    * **Sleeping Environment Sensor**: If manual provisioning is for a battery-powered sensor, check the "Sleeping temp/humidity sensor" box to avoid handshake timeouts.
 
-Once a CozyLife Local entry is configured, the integration keeps one shared local UDP listener for all of its entries. An unconfigured device that announces itself on UDP/6095 appears as a confirmation card; Home Assistant still verifies it over local TCP before adding it.
+Opening the CozyLife Local setup flow activates one shared local UDP listener, and it stays active while configured entries are running. An unconfigured device that announces itself on UDP/6095 appears as a confirmation card; Home Assistant still verifies it over local TCP before adding it.
 
 ### Sleeping Environment Sensors
 

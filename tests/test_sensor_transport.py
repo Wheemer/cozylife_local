@@ -79,6 +79,92 @@ def _load_background_discovery():
     return background_discovery
 
 
+def _load_config_flow():
+    """Load the config flow with only its startup interfaces stubbed."""
+    _load_api()
+    config_entries = types.ModuleType("homeassistant.config_entries")
+
+    class ConfigFlow:
+        def __init_subclass__(cls, **_kwargs) -> None:
+            return None
+
+    config_entries.ConfigEntry = object
+    config_entries.ConfigFlow = ConfigFlow
+    config_entries.OptionsFlow = object
+    config_entries.CONN_CLASS_LOCAL_POLL = "local_poll"
+    sys.modules["homeassistant.config_entries"] = config_entries
+    data_entry_flow = types.ModuleType("homeassistant.data_entry_flow")
+    data_entry_flow.FlowResult = dict
+    sys.modules["homeassistant.data_entry_flow"] = data_entry_flow
+    vol = types.ModuleType("voluptuous")
+    vol.Schema = lambda value: value
+    vol.Optional = lambda value, **_kwargs: value
+    vol.Required = lambda value, **_kwargs: value
+    vol.All = lambda *values: values
+    vol.Range = lambda **_kwargs: object()
+    vol.In = lambda value: value
+    sys.modules["voluptuous"] = vol
+    background_discovery = types.ModuleType("cozylife_local.background_discovery")
+
+    async def async_get_background_discovery(_hass):
+        return None
+
+    background_discovery.async_get_background_discovery = async_get_background_discovery
+    sys.modules["cozylife_local.background_discovery"] = background_discovery
+    discovery = types.ModuleType("cozylife_local.discovery")
+    discovery.async_load_model_catalog = lambda _hass: None
+    discovery.classify_device = lambda *_args: None
+    discovery.get_model_info = lambda _pid: None
+    discovery.get_wifi_environment_sensor_models = lambda: []
+    sys.modules["cozylife_local.discovery"] = discovery
+    network_discovery = types.ModuleType("cozylife_local.network_discovery")
+    network_discovery.AUTO_NETWORK = "auto"
+    network_discovery.DiscoveredDevice = object
+    network_discovery.NetworkScanTooLarge = ValueError
+    network_discovery.NoNetworkAvailable = ValueError
+
+    async def async_discover_devices(_hass, _network):
+        return []
+
+    network_discovery.async_discover_devices = async_discover_devices
+    sys.modules["cozylife_local.network_discovery"] = network_discovery
+    sys.modules.pop("cozylife_local.config_flow", None)
+    from cozylife_local import config_flow
+
+    # The config-flow module has captured these references. Remove the
+    # temporary modules so later tests import the actual catalog and UDP code.
+    sys.modules.pop("cozylife_local.background_discovery", None)
+    sys.modules.pop("cozylife_local.discovery", None)
+    sys.modules.pop("cozylife_local.network_discovery", None)
+    return config_flow
+
+
+def test_opening_the_config_flow_starts_shared_udp_discovery() -> None:
+    """Discovery is available before the first config entry is created."""
+    config_flow = _load_config_flow()
+
+    async def exercise() -> None:
+        flow = object.__new__(config_flow.CozyLifeConfigFlow)
+        flow.hass = object()
+        flow.async_show_form = lambda **kwargs: kwargs
+        starts: list[object] = []
+
+        async def start_discovery(hass) -> None:
+            starts.append(hass)
+
+        with patch.object(
+            config_flow,
+            "async_get_background_discovery",
+            start_discovery,
+        ):
+            result = await flow.async_step_user()
+
+        assert starts == [flow.hass]
+        assert result["step_id"] == "user"
+
+    asyncio.run(exercise())
+
+
 def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None:
     """The local writer sends attr:[1] and the reader keeps every report."""
     CozyLifeDevice = _load_api()

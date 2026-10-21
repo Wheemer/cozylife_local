@@ -9,6 +9,7 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
+from .background_discovery import async_get_background_discovery
 from .const import (
     DOMAIN,
     DEFAULT_MAX_KELVIN,
@@ -79,6 +80,17 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Handle the initial step."""
         errors: Dict[str, str] = {}
+
+        if user_input is None:
+            # A custom integration has no manifest trigger for this vendor's
+            # UDP protocol before its first config entry exists. Starting the
+            # listener as soon as its config flow opens gives an unconfigured
+            # device the same shared APK-style discovery path without making
+            # the form depend on a socket being available.
+            try:
+                await async_get_background_discovery(self.hass)
+            except OSError as err:
+                _LOGGER.debug("CozyLife UDP discovery is unavailable: %s", err)
 
         if user_input is not None:
             ip_address = user_input.get("ip_address", "").strip()
