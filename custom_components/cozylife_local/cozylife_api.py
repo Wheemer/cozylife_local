@@ -213,7 +213,7 @@ class CozyLifeDevice:
                 return None
             response = asyncio.get_running_loop().create_future()
             self._pending_responses[sent_sn] = response
-            encoded_message = json.dumps(message, separators=(",", ":")).encode("utf8")
+            encoded_message = (json.dumps(message, separators=(",", ":")) + "\r\n").encode("utf8")
             _RAW_LOGGER.debug("Sending to %s: %r", self._ip_address, encoded_message)
             writer.write(encoded_message)
             await writer.drain()
@@ -246,7 +246,9 @@ class CozyLifeDevice:
             if writer is None:
                 return False
             message = self._create_message(cmd, payload)
-            encoded_message = json.dumps(message, separators=(",", ":")).encode("utf8")
+            encoded_message = (
+                json.dumps(message, separators=(",", ":")) + "\r\n"
+            ).encode("utf8")
             _RAW_LOGGER.debug("Sending to %s: %r", self._ip_address, encoded_message)
             writer.write(encoded_message)
             await writer.drain()
@@ -422,7 +424,7 @@ class CozyLifeDevice:
                 return False
             message = self._create_message(CMD_QUERY, {"attr": [1]})
             writer.write(
-                json.dumps(message, separators=(",", ":")).encode("utf8")
+                (json.dumps(message, separators=(",", ":")) + "\r\n").encode("utf8")
             )
             await writer.drain()
             return True
