@@ -8,16 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .background_discovery import async_get_background_discovery
-from .const import (
-    LIGHT_COUNTDOWN,
-    PLUG_CURRENT,
-    PLUG_LED_STATUS,
-    PLUG_OVERCURRENT_PROTECTION,
-    PLUG_POWER_ON_STATE,
-    PLUG_VOLTAGE,
-    SENSOR_HUMIDITY,
-    SENSOR_TEMPERATURE,
-)
+from .const import SENSOR_HUMIDITY, SENSOR_TEMPERATURE
 from .cozylife_api import CozyLifeDevice
 from .discovery import classify_device
 
@@ -32,15 +23,6 @@ ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
 }
-EXTRA_SWITCH_OPTION_DPIDS = (
-    PLUG_POWER_ON_STATE,
-    PLUG_OVERCURRENT_PROTECTION,
-    PLUG_LED_STATUS,
-)
-EXTRA_PLUG_METERING_DPIDS = (
-    PLUG_CURRENT,
-    PLUG_VOLTAGE,
-)
 
 
 def _is_valid_environment_measurement(
@@ -314,63 +296,6 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
         return state_data
 
-    async def _async_add_hidden_switch_state(
-        self,
-        state_data: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Merge switch option DPIDs that are omitted from default state."""
-        if not self.classification.supports_switch_entities:
-            return state_data
-
-        known_dpids = set(self.device.dpid or [])
-
-        candidate_dpids = set(EXTRA_SWITCH_OPTION_DPIDS)
-        if self.classification.supports_plug_metering:
-            candidate_dpids.update(EXTRA_PLUG_METERING_DPIDS)
-
-        missing_dpids = [
-            dpid
-            for dpid in candidate_dpids
-            if dpid in known_dpids and dpid not in state_data
-        ]
-        if not missing_dpids:
-            return state_data
-
-        hidden_state = await self.device.async_get_state(missing_dpids)
-        if hidden_state is None:
-            _LOGGER.debug(
-                "[COZYLIFE] Failed to query hidden switch DPIDs %s from %s",
-                missing_dpids,
-                self.device.ip_address,
-            )
-            return state_data
-
-        return {**state_data, **hidden_state}
-
-    async def _async_add_hidden_light_state(
-        self,
-        state_data: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Merge safe light countdown state omitted from default state."""
-        if not self.classification.is_light or LIGHT_COUNTDOWN in state_data:
-            return state_data
-
-        known_dpids = set(self.device.dpid or [])
-
-        if LIGHT_COUNTDOWN not in known_dpids:
-            return state_data
-
-        hidden_state = await self.device.async_get_state([LIGHT_COUNTDOWN])
-        if hidden_state is None:
-            _LOGGER.debug(
-                "[COZYLIFE] Failed to query hidden light countdown DPID %s from %s",
-                LIGHT_COUNTDOWN,
-                self.device.ip_address,
-            )
-            return state_data
-
-        return {**state_data, **hidden_state}
-
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from device."""
         try:
@@ -392,8 +317,8 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     data={**self._entry.data, "ip_address": self.device.ip_address},
                 )
 
-            state_data = await self._async_add_hidden_switch_state(state_data)
-            state_data = await self._async_add_hidden_light_state(state_data)
+            # CMD 2 / attr:[1] is the APK complete local status request.
+            # Do not synthesize extra per-DPID reads that the APK does not send.
             state_data = self._preserve_environment_measurements(state_data)
             _LOGGER.debug(f"[COZYLIFE] Successfully fetched state for {self.device.ip_address}: {state_data}")
             return state_data

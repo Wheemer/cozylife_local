@@ -763,10 +763,9 @@ def test_persistent_transport_preserves_existing_info_state_and_set_commands() -
             assert await device.async_update_device_info()
             assert device.device_id == "device-1"
             assert device.dpid == ["1", "11", "18", "19", "20"]
-            assert await device.async_get_state(["1", "11"]) == {"1": True, "11": 42}
             assert await device.async_set_state({"1": False})
             await asyncio.sleep(0.05)
-            assert len(requests) == 4
+            assert len(requests) == 3
             assert requests[-1]["cmd"] == 3
             assert requests[-1]["msg"] == {"attr": [1], "data": {"1": False}}
         finally:
@@ -803,8 +802,8 @@ def test_property_write_succeeds_without_a_correlated_reply() -> None:
     asyncio.run(exercise())
 
 
-def test_state_query_accepts_apk_local_reply_without_res() -> None:
-    """APK local replies are valid JSON frames even when res is omitted."""
+def test_state_query_accepts_apk_local_reply_with_a_different_sn() -> None:
+    """APK status reads use the next state frame, not request-SN matching."""
     CozyLifeDevice = _load_api()
 
     async def exercise() -> None:
@@ -814,7 +813,7 @@ def test_state_query_accepts_apk_local_reply_without_res() -> None:
             writer.write(
                 (json.dumps({
                     "cmd": 2,
-                    "sn": request["sn"],
+                    "sn": "device-state-event",
                     "msg": {"data": {"1": True, "11": 42}},
                 }) + "\r\n").encode()
             )
