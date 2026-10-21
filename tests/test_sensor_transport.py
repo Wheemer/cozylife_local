@@ -7,9 +7,8 @@ import json
 import sys
 import time
 import types
-from unittest.mock import patch
 from pathlib import Path
-
+from unittest.mock import patch
 
 COMPONENT_DIR = Path(__file__).parents[1] / "custom_components" / "cozylife_local"
 
@@ -459,6 +458,73 @@ def test_manual_scan_reuses_listener_and_defers_automatic_flow() -> None:
         assert flow_calls == []
 
     asyncio.run(exercise())
+
+
+def test_udp_discovery_shutdown_cancels_its_task_and_closes_the_socket() -> None:
+    """Stopping Home Assistant leaves no discovery socket or task behind."""
+    background_discovery = _load_background_discovery()
+
+    async def exercise() -> None:
+        class FakeTransport:
+            closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        async def wait_forever() -> None:
+            await asyncio.Event().wait()
+
+        transport = FakeTransport()
+        service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
+        service._transport = transport
+        service._broadcast_task = asyncio.create_task(wait_forever())
+
+        await service.async_stop()
+
+        assert transport.closed
+        assert service._transport is None
+        assert service._broadcast_task is None
+        assert not service.is_running
+
+    asyncio.run(exercise())
+
+
+def test_udp_announcement_for_provisional_sensor_does_not_make_a_second_card() -> None:
+    """An announced DID belongs to a manual sleeping-sensor entry by its IP."""
+    background_discovery = _load_background_discovery()
+    flow_calls: list[object] = []
+    entry = types.SimpleNamespace(
+        data={
+            "device_id": "sleeping_sensor_Z4tRml_10.0.0.115",
+            "ip_address": "10.0.0.115",
+        },
+        unique_id="sleeping_sensor_Z4tRml_10.0.0.115",
+    )
+    hass = types.SimpleNamespace(
+        config_entries=types.SimpleNamespace(async_entries=lambda _domain: [entry])
+    )
+    service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
+    service.hass = hass
+    service._devices = {}
+    service._entry_callbacks = {}
+    service._scan_in_progress = 0
+
+    with patch.object(
+        background_discovery.discovery_flow,
+        "async_create_flow",
+        lambda *_args, **_kwargs: flow_calls.append(True),
+    ):
+        service._handle_device(
+            background_discovery.UdpDiscoveredDevice(
+                device_id="verified-sensor-did",
+                ip_address="10.0.0.115",
+                pid="Z4tRml",
+                device_type_code="03",
+            )
+        )
+
+    assert flow_calls == []
+    assert service._devices["verified-sensor-did"][0].ip_address == "10.0.0.115"
 
 
 def test_persistent_transport_preserves_existing_info_state_and_set_commands() -> None:
