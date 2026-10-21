@@ -185,14 +185,6 @@ def test_config_flow_import_creates_a_discovery_controller() -> None:
     asyncio.run(exercise())
 
 
-def test_discovery_controller_has_no_options_flow() -> None:
-    """The generic controller has no user-facing configuration page."""
-    config_flow = _load_config_flow()
-    controller = types.SimpleNamespace(data={"entry_type": "discovery_controller"})
-
-    assert config_flow.CozyLifeConfigFlow.async_get_options_flow(controller) is None
-
-
 def test_udp_discovery_shows_normal_confirmation_before_adding() -> None:
     """A UDP candidate follows Home Assistant's ordinary Add-device flow."""
     config_flow = _load_config_flow()

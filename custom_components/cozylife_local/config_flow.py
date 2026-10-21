@@ -162,9 +162,7 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):
-        """Return options only for an actual device entry."""
-        if config_entry.data.get("entry_type") == DISCOVERY_CONTROLLER_ENTRY_TYPE:
-            return None
+        """Get the options flow for this handler."""
         return CozyLifeOptionsFlow(config_entry)
 
     async def _async_create_entry_from_ip(

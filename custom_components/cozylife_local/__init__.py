@@ -3,7 +3,8 @@ import logging
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import CoreState, HomeAssistant, callback
 
 from .background_discovery import (
     DATA_DISCOVERY_SERVICE,
@@ -42,11 +43,29 @@ async def _async_ensure_discovery_controller(hass: HomeAssistant) -> None:
         _LOGGER.exception("Unable to create the CozyLife discovery controller")
 
 
+
+@callback
+def _async_schedule_discovery_controller(hass: HomeAssistant) -> None:
+    """Create the upgrade controller only after Core startup completes."""
+    if hass.state is CoreState.running:
+        hass.async_create_task(_async_ensure_discovery_controller(hass))
+        return
+
+
+    @callback
+    def _async_start_controller_migration(_event) -> None:
+        hass.async_create_task(_async_ensure_discovery_controller(hass))
+
+    hass.bus.async_listen_once(
+        EVENT_HOMEASSISTANT_STARTED, _async_start_controller_migration
+    )
+
+
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     """Set up the integration-wide UDP listener lifecycle."""
 
     hass.data.setdefault(DOMAIN, {})
-    await _async_ensure_discovery_controller(hass)
+    _async_schedule_discovery_controller(hass)
     try:
         await async_get_background_discovery(hass)
     except OSError as err:
