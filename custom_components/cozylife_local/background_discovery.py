@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from homeassistant import config_entries
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import discovery_flow
 
@@ -21,6 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DATA_DISCOVERY_SERVICE = "background_udp_discovery"
 DATA_DISCOVERY_LOCK = "background_udp_discovery_lock"
+DATA_DISCOVERY_STOP_UNSUB = "background_udp_discovery_stop_unsub"
 APK_DAEMON_INTERVAL_SECONDS = 10.0
 APK_NETWORK_CHANGE_BROADCAST_COUNT = 17
 CONFIG_FLOW_DISCOVERY_WINDOW_SECONDS = 5.0
@@ -248,6 +250,19 @@ async def async_get_background_discovery(
         if service is None:
             service = CozyLifeBackgroundDiscovery(hass)
             domain_data[DATA_DISCOVERY_SERVICE] = service
+        if DATA_DISCOVERY_STOP_UNSUB not in domain_data:
+            # Config flows can start discovery before a config entry exists,
+            # so tie cleanup to the service rather than entry setup.
+            @callback
+            def _async_stop_discovery(_event) -> None:
+                active_service = domain_data.get(DATA_DISCOVERY_SERVICE)
+                if active_service is not None:
+                    hass.async_create_task(active_service.async_stop())
+
+            domain_data[DATA_DISCOVERY_STOP_UNSUB] = hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STOP,
+                _async_stop_discovery,
+            )
         if start and service._transport is None:
             await service.async_start()
     return service

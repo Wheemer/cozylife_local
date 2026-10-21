@@ -65,6 +65,9 @@ def _load_network_discovery():
 def _load_background_discovery():
     """Load the shared UDP service with the minimal HA symbols it uses."""
     _load_api()
+    homeassistant_const = types.ModuleType("homeassistant.const")
+    homeassistant_const.EVENT_HOMEASSISTANT_STOP = "homeassistant_stop"
+    sys.modules["homeassistant.const"] = homeassistant_const
     config_entries = types.ModuleType("homeassistant.config_entries")
     config_entries.SOURCE_INTEGRATION_DISCOVERY = "integration_discovery"
     sys.modules["homeassistant.config_entries"] = config_entries
@@ -392,7 +395,13 @@ def test_shared_udp_listener_creation_is_serialized() -> None:
     background_discovery = _load_background_discovery()
 
     async def exercise() -> None:
-        hass = types.SimpleNamespace(data={})
+        stop_callbacks: list[object] = []
+        hass = types.SimpleNamespace(
+            data={},
+            bus=types.SimpleNamespace(
+                async_listen_once=lambda _event, callback: stop_callbacks.append(callback)
+            ),
+        )
         starts: list[object] = []
 
         async def start_once(service) -> None:
@@ -412,6 +421,32 @@ def test_shared_udp_listener_creation_is_serialized() -> None:
 
         assert first is second
         assert starts == [first]
+        assert len(stop_callbacks) == 1
+
+    asyncio.run(exercise())
+
+
+def test_shared_udp_listener_stop_hook_closes_config_flow_listener() -> None:
+    """A listener started before the first entry still shuts down cleanly."""
+    background_discovery = _load_background_discovery()
+
+    async def exercise() -> None:
+        stop_callbacks: list[object] = []
+        scheduled: list[object] = []
+        hass = types.SimpleNamespace(
+            data={},
+            bus=types.SimpleNamespace(
+                async_listen_once=lambda _event, callback: stop_callbacks.append(callback)
+            ),
+            async_create_task=scheduled.append,
+        )
+
+        await background_discovery.async_get_background_discovery(hass, start=False)
+        assert len(stop_callbacks) == 1
+
+        stop_callbacks[0](None)
+        assert len(scheduled) == 1
+        await scheduled[0]
 
     asyncio.run(exercise())
 
@@ -421,7 +456,10 @@ def test_shared_udp_listener_retries_after_socket_start_failure() -> None:
     background_discovery = _load_background_discovery()
 
     async def exercise() -> None:
-        hass = types.SimpleNamespace(data={})
+        hass = types.SimpleNamespace(
+            data={},
+            bus=types.SimpleNamespace(async_listen_once=lambda *_args: None),
+        )
         attempts = 0
 
         async def start_with_one_failure(service) -> None:
@@ -558,7 +596,10 @@ def test_first_manual_scan_uses_only_the_apk_start_burst() -> None:
             def sendto(self, data: bytes, address: tuple[str, int]) -> None:
                 self.sent.append((data, address))
 
-        hass = types.SimpleNamespace(data={})
+        hass = types.SimpleNamespace(
+            data={},
+            bus=types.SimpleNamespace(async_listen_once=lambda *_args: None),
+        )
         transport = FakeTransport()
 
         async def start_with_apk_burst(service) -> None:

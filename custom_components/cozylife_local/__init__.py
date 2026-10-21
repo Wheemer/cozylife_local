@@ -2,8 +2,7 @@
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 
 from .background_discovery import (
     DATA_DISCOVERY_SERVICE,
@@ -29,13 +28,6 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
         # later config-entry setup will retry it.
         _LOGGER.warning("Unable to start shared CozyLife UDP discovery: %s", err)
 
-    @callback
-    def _async_stop_discovery(_event) -> None:
-        service = hass.data.get(DOMAIN, {}).get(DATA_DISCOVERY_SERVICE)
-        if service is not None:
-            hass.async_create_task(service.async_stop())
-
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop_discovery)
     return True
 
 
