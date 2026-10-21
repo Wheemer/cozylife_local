@@ -188,7 +188,9 @@ class CozyLifeDevice:
                 sent_sn = frame.get("sn")
                 future = self._pending_responses.pop(sent_sn, None)
                 if future and not future.done():
-                    future.set_result(frame.get("msg") if frame.get("res") == 0 else None)
+                    future.set_result(
+                        frame.get("msg") if frame.get("res", 0) == 0 else None
+                    )
 
                 listener = self._message_listener
                 if listener is not None:

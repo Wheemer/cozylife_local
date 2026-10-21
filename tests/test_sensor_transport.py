@@ -778,6 +778,37 @@ def test_persistent_transport_preserves_existing_info_state_and_set_commands() -
     asyncio.run(exercise())
 
 
+def test_state_query_accepts_apk_local_reply_without_res() -> None:
+    """APK local replies are valid JSON frames even when res is omitted."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        async def handler(reader, writer) -> None:
+            request = json.loads((await reader.readline()).decode())
+            assert request["cmd"] == 2
+            writer.write(
+                (json.dumps({
+                    "cmd": 2,
+                    "sn": request["sn"],
+                    "msg": {"data": {"1": True, "11": 42}},
+                }) + "\r\n").encode()
+            )
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handler, "127.0.0.1", 5555)
+        device = CozyLifeDevice("127.0.0.1", timeout=1.0)
+        try:
+            assert await device.async_get_status() == {"1": True, "11": 42}
+        finally:
+            await device.async_close()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
 def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     """Do not expose catalog-only lights or non-Wi-Fi sensors as local devices."""
     _load_api()

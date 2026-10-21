@@ -179,6 +179,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Set up platforms (light, switch, sensor, etc.)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    if entry.data.get("announced_via_udp", False) and not coordinator.is_sensor:
+        # The APK issues local refreshes asynchronously after binding an
+        # announced device to its DID/IP identity. Keep setup non-blocking
+        # while immediately starting Home Assistant's equivalent refresh.
+        hass.async_create_task(coordinator.async_request_refresh())
+
     # Reload entry when options change
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
