@@ -332,6 +332,38 @@ def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None
     asyncio.run(exercise())
 
 
+def test_status_write_dispatches_a_delayed_report_without_waiting() -> None:
+    """A delayed local frame remains valid after the write itself succeeds."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        reports: list[dict] = []
+
+        async def handler(reader, writer) -> None:
+            await reader.readline()
+            await asyncio.sleep(0.25)
+            writer.write(b'{"cmd":2,"sn":"delayed","msg":{"data":{"1":true}}}\r\n')
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handler, "127.0.0.1", 5555)
+        device = CozyLifeDevice("127.0.0.1", timeout=0.2)
+        device.set_message_listener(reports.append)
+        try:
+            assert await device.async_send_status()
+            await asyncio.sleep(0.3)
+            assert reports == [
+                {"cmd": 2, "sn": "delayed", "msg": {"data": {"1": True}}}
+            ]
+        finally:
+            await device.async_close()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
 def test_status_socket_is_retained_across_the_discovery_interval() -> None:
     """A retained socket does not reconnect merely because ten seconds pass."""
     CozyLifeDevice = _load_api()
