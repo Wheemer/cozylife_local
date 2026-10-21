@@ -116,11 +116,22 @@ class CozyLifeDevice:
             if self._writer and not self._writer.is_closing():
                 return
             try:
+                _RAW_LOGGER.debug(
+                    "Opening persistent CozyLife socket to %s:%s",
+                    self._ip_address,
+                    COZYLIFE_PORT,
+                )
                 reader, writer = await asyncio.wait_for(
                     asyncio.open_connection(self._ip_address, COZYLIFE_PORT),
                     timeout=self._timeout,
                 )
-            except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+            except (asyncio.TimeoutError, ConnectionRefusedError, OSError) as err:
+                _RAW_LOGGER.debug(
+                    "Could not open CozyLife socket to %s:%s: %r",
+                    self._ip_address,
+                    COZYLIFE_PORT,
+                    err,
+                )
                 self._disconnect()
                 raise
 
@@ -178,6 +189,11 @@ class CozyLifeDevice:
             while True:
                 raw_frame = await reader.readline()
                 if not raw_frame:
+                    _RAW_LOGGER.debug(
+                        "Persistent CozyLife socket at %s:%s reached EOF",
+                        self._ip_address,
+                        COZYLIFE_PORT,
+                    )
                     return
                 try:
                     frame = json.loads(raw_frame.decode("utf8").strip())
@@ -241,7 +257,13 @@ class CozyLifeDevice:
                 return None
             finally:
                 self._pending_responses.pop(sent_sn, None)
-        except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+        except (asyncio.TimeoutError, ConnectionRefusedError, OSError) as err:
+            _RAW_LOGGER.debug(
+                "CozyLife status request transport failure for %s:%s: %r",
+                self._ip_address,
+                COZYLIFE_PORT,
+                err,
+            )
             self._disconnect()
             return None
 
