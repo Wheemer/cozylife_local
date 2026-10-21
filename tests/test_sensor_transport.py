@@ -410,6 +410,56 @@ def test_shared_udp_listener_uses_home_assistant_discovery_flow_helper() -> None
     ]
 
 
+def test_manual_scan_reuses_listener_and_defers_automatic_flow() -> None:
+    """A setup scan sends one APK frame and returns its own announcement."""
+    background_discovery = _load_background_discovery()
+
+    async def exercise() -> None:
+        service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
+        service._devices = {}
+        service._entry_callbacks = {}
+        service._scan_in_progress = 0
+        flow_calls: list[object] = []
+        send_count = 0
+
+        class FakeTransport:
+            def sendto(self, _data, _address) -> None:
+                nonlocal send_count
+                send_count += 1
+                service._handle_device(
+                    background_discovery.UdpDiscoveredDevice(
+                        device_id="new-device",
+                        ip_address="10.0.0.44",
+                        pid="hjk1jk",
+                        device_type_code="05",
+                    )
+                )
+
+        service._transport = FakeTransport()
+        service.hass = types.SimpleNamespace(
+            config_entries=types.SimpleNamespace(async_entries=lambda _domain: [])
+        )
+
+        async def no_wait(_delay) -> None:
+            return None
+
+        with (
+            patch.object(background_discovery.asyncio, "sleep", no_wait),
+            patch.object(
+                background_discovery.discovery_flow,
+                "async_create_flow",
+                lambda *_args, **_kwargs: flow_calls.append(True),
+            ),
+        ):
+            discovered = await service.async_scan()
+
+        assert [device.device_id for device in discovered] == ["new-device"]
+        assert send_count == 1
+        assert flow_calls == []
+
+    asyncio.run(exercise())
+
+
 def test_persistent_transport_preserves_existing_info_state_and_set_commands() -> None:
     """The reader-based transport still supports ordinary light/switch calls."""
     CozyLifeDevice = _load_api()
