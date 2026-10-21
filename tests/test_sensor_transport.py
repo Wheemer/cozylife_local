@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import time
 import types
 from pathlib import Path
 from unittest.mock import patch
@@ -332,8 +333,8 @@ def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None
     asyncio.run(exercise())
 
 
-def test_status_socket_is_retained_until_the_peer_closes() -> None:
-    """The APK socket pool keeps a valid local connection across status writes."""
+def test_status_socket_is_recycled_on_the_observed_sensor_cadence() -> None:
+    """The observed Felisha sensor transport reconnects after thirty seconds."""
     CozyLifeDevice = _load_api()
 
     async def exercise() -> None:
@@ -353,9 +354,10 @@ def test_status_socket_is_retained_until_the_peer_closes() -> None:
         try:
             assert await device.async_send_status()
             await asyncio.sleep(0.05)
+            device._connected_at = time.monotonic() - 30.1
             assert await device.async_send_status()
             await asyncio.sleep(0.05)
-            assert connections == 1
+            assert connections == 2
         finally:
             await device.async_close()
             server.close()

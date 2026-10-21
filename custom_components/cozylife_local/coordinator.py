@@ -26,9 +26,11 @@ _UPDATE_LOGGER = logging.getLogger(f"{__name__}.updates")
 _UPDATE_LOGGER.setLevel(logging.INFO)
 
 UPDATE_INTERVAL = timedelta(seconds=30)
-# Keep each sleeping-sensor attempt within its 500 ms probe slot.
-SENSOR_CONNECT_TIMEOUT_SECONDS = 0.45
-SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.5
+# Restore the October 16-18 sensor transport cadence that produced sustained
+# reports on Felisha's sensor. The connection bound is part of the cadence:
+# a sleeping device must not consume the next probe slot.
+SENSOR_CONNECT_TIMEOUT_SECONDS = 0.2
+SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.2
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
