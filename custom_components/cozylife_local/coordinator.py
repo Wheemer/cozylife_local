@@ -26,7 +26,8 @@ _UPDATE_LOGGER = logging.getLogger(f"{__name__}.updates")
 _UPDATE_LOGGER.setLevel(logging.INFO)
 
 UPDATE_INTERVAL = timedelta(seconds=30)
-SENSOR_CONNECT_TIMEOUT_SECONDS = 1.0
+# Keep each sleeping-sensor attempt within its 500 ms probe slot.
+SENSOR_CONNECT_TIMEOUT_SECONDS = 0.45
 SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.5
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
