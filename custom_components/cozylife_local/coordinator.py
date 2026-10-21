@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -16,7 +15,6 @@ _LOGGER = logging.getLogger(__name__)
 _UPDATE_LOGGER = logging.getLogger(f"{__name__}.updates")
 _UPDATE_LOGGER.setLevel(logging.INFO)
 
-UPDATE_INTERVAL = timedelta(seconds=30)
 # These are local attempt bounds, not a claimed sensor wake or report schedule.
 SENSOR_CONNECT_TIMEOUT_SECONDS = 0.2
 SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.5
@@ -64,11 +62,15 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # explicitly identified Wi-Fi environment sensors use local sleeping
         # sensor transport.
         self._uses_sensor_polling = self.classification.is_environment_sensor
-        # The APK keeps a socket reader alive; sensor reports arrive on that
+        # The APK keeps a socket reader alive; local reports arrive on that
         # stream rather than from an assumed report schedule.  Keep wake-window
         # probing outside DataUpdateCoordinator: it uses the configured local
         # address while UDP discovery independently refreshes that address.
-        interval = None if self._uses_sensor_polling else UPDATE_INTERVAL
+        #
+        # Powered devices also do not use an independent timer: their local
+        # status request is gated by a fresh matching UDP announcement, as the
+        # APK's Wi-Fi sender is gated by its UDP device cache.
+        interval = None
 
         super().__init__(
             hass,
@@ -132,11 +134,12 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # without a synthetic high-frequency polling loop.
             await self.device.async_send_status()
             return
-        # The UDP announcement is an identity/address update, not a state
-        # response. The APK does not refresh state for an unchanged address.
-        # Refresh once only after an actual address change.
-        if moved:
-            await self.async_request_refresh()
+        # A matching UDP reply is the local-presence gate for the APK's Wi-Fi
+        # writer. Send exactly one local cmd-2 request in that fresh window,
+        # including when the address is unchanged. The APK does not wait for a
+        # correlated reply here; the persistent reader publishes any later
+        # frame, so a delayed reply cannot mark the device unavailable.
+        await self.device.async_send_status()
 
     async def _async_promote_sensor_identity(self) -> None:
         """Replace a sleeping-sensor setup ID after a verified local handshake.

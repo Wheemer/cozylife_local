@@ -163,9 +163,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if coordinator.is_sensor or entry.data.get("announced_via_udp", False):
         # Do not block setup for a UDP-announced device. The APK accepts the
-        # announcement identity first and reads state asynchronously; a local
-        # reply is not a prerequisite for adding it. The coordinator refreshes
-        # it on its normal interval after setup.
+        # announcement identity first; a local reply is not a prerequisite for
+        # adding it. A powered device is refreshed by its next matching UDP
+        # announcement, which avoids probing it outside the announcement
+        # window. This is intentionally separate from sensor wake probing.
         #
         # A sleeping sensor also begins unavailable. The coordinator
         # keeps the configured local address available for wake-window probes;
@@ -179,12 +180,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Set up platforms (light, switch, sensor, etc.)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    if entry.data.get("announced_via_udp", False) and not coordinator.is_sensor:
-        # The APK issues local refreshes asynchronously after binding an
-        # announced device to its DID/IP identity. Keep setup non-blocking
-        # while immediately starting Home Assistant's equivalent refresh.
-        hass.async_create_task(coordinator.async_request_refresh())
 
     # Reload entry when options change
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
