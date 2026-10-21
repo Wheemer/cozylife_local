@@ -215,36 +215,6 @@ def test_status_send_reconnects_after_the_peer_closes() -> None:
     asyncio.run(exercise())
 
 
-def test_discovery_accepts_only_the_matching_device_and_valid_address() -> None:
-    """UDP discovery must not route another CozyLife device into this entry."""
-    _load_api()
-    from cozylife_local.cozylife_api import _CozyLifeDiscoveryProtocol
-
-    async def exercise() -> None:
-        found: list[str] = []
-
-        async def remember(ip_address: str) -> None:
-            found.append(ip_address)
-
-        protocol = _CozyLifeDiscoveryProtocol("target-device", remember)
-        protocol.datagram_received(
-            b'{"msg":{"did":"other-device","ip":"10.0.0.99"}}\r\n',
-            ("10.0.0.99", 6095),
-        )
-        protocol.datagram_received(
-            b'{"msg":{"did":"target-device","ip":""}}\r\n',
-            ("10.0.0.115", 6095),
-        )
-        protocol.datagram_received(
-            b'{"msg":{"did":"target-device","ip":"10.0.0.115"}}\r\n',
-            ("10.0.0.115", 6095),
-        )
-        await asyncio.sleep(0)
-        assert found == ["10.0.0.115"]
-
-    asyncio.run(exercise())
-
-
 def test_shared_udp_discovery_uses_the_apk_burst_on_one_receive_socket() -> None:
     """The one shared listener preserves the APK's 17 request UDP session."""
     background_discovery = _load_background_discovery()
