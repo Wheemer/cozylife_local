@@ -23,9 +23,12 @@ _LOGGER = logging.getLogger(__name__)
 DATA_DISCOVERY_SERVICE = "background_udp_discovery"
 DATA_DISCOVERY_LOCK = "background_udp_discovery_lock"
 DATA_DISCOVERY_STOP_UNSUB = "background_udp_discovery_stop_unsub"
-# This is Home Assistant's local discovery attempt cadence. It is not a
-# claimed sensor report schedule: a battery sensor decides its own wakeups.
-DISCOVERY_BROADCAST_INTERVAL_SECONDS = 0.5
+# The APK's AppDeamon invokes UdpBoardcastChecker every 10 seconds.  That
+# checker begins a five-second UDP receive window and emits one command-0
+# discovery broadcast.  This is discovery lifecycle timing only; sleeping
+# sensor wake probing is owned by the device coordinator and deliberately has
+# its own cadence.
+DISCOVERY_BROADCAST_INTERVAL_SECONDS = 10.0
 APK_NETWORK_CHANGE_BROADCAST_COUNT = 1
 
 

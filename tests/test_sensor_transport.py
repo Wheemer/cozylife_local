@@ -430,10 +430,20 @@ def test_status_send_reconnects_after_the_peer_closes() -> None:
     asyncio.run(exercise())
 
 
-def test_shared_udp_discovery_uses_the_shared_wake_window_cadence() -> None:
-    """The shared listener emits a request every half second."""
+def test_udp_discovery_and_sleeping_sensor_wake_probe_are_separate() -> None:
+    """APK discovery cadence must not alter the sensor's wake-window probe."""
     background_discovery = _load_background_discovery()
-    assert background_discovery.DISCOVERY_BROADCAST_INTERVAL_SECONDS == 0.5
+    _load_coordinator()
+    from cozylife_local.coordinator import SENSOR_WAKE_PROBE_INTERVAL_SECONDS
+
+    assert background_discovery.DISCOVERY_BROADCAST_INTERVAL_SECONDS == 10.0
+    assert SENSOR_WAKE_PROBE_INTERVAL_SECONDS == 0.5
+
+
+def test_shared_udp_discovery_uses_the_apk_daemon_cadence() -> None:
+    """Shared UDP discovery follows the APK daemon, not sensor wake probing."""
+    background_discovery = _load_background_discovery()
+    assert background_discovery.DISCOVERY_BROADCAST_INTERVAL_SECONDS == 10.0
 
     class FakeTransport:
         def __init__(self) -> None:
@@ -969,8 +979,8 @@ def test_environment_report_accepts_a_valid_partial_measurement() -> None:
     assert not coordinator._has_valid_environment_measurements({"4": 0})
 
 
-def test_powered_udp_announcement_refreshes_only_after_address_change() -> None:
-    """An unchanged APK announcement must not turn UDP cadence into TCP polling."""
+def test_powered_udp_announcement_gates_one_local_refresh_per_reply() -> None:
+    """Every fresh matching UDP reply gates one local powered-device refresh."""
     CozyLifeCoordinator = _load_coordinator()
 
     async def exercise() -> None:
@@ -1001,7 +1011,7 @@ def test_powered_udp_announcement_refreshes_only_after_address_change() -> None:
         await coordinator.async_handle_discovered_address("10.0.0.44")
         await coordinator.async_handle_discovered_address("10.0.0.45")
 
-        assert refreshes == [True]
+        assert refreshes == [True, True]
         assert updates == [{"ip_address": "10.0.0.45"}]
 
     asyncio.run(exercise())
