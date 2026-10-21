@@ -199,9 +199,17 @@ class CozyLifeBackgroundDiscovery:
         """Cache an APK reply, refresh known entries, or start one discovery flow."""
         self._devices[device.device_id] = (device, time.monotonic())
         callback = self._entry_callbacks.get(device.device_id)
+        route = "device ID"
         if callback is None:
             callback = self._address_callbacks.get(device.ip_address)
+            route = "provisional address"
         if callback is not None:
+            _LOGGER.debug(
+                "Routing CozyLife UDP announcement for DID %s at %s by %s",
+                device.device_id,
+                device.ip_address,
+                route,
+            )
             self.hass.async_create_task(callback(device.ip_address))
             return
 
@@ -209,9 +217,24 @@ class CozyLifeBackgroundDiscovery:
         # its scan. Starting a second flow here would make two competing setup
         # cards for the same packet.
         if self._scan_in_progress:
+            _LOGGER.debug(
+                "Keeping CozyLife UDP announcement for DID %s at %s in the active scan",
+                device.device_id,
+                device.ip_address,
+            )
             return
         if self._is_configured(device.device_id, device.ip_address):
+            _LOGGER.debug(
+                "Ignoring CozyLife UDP announcement for already configured DID %s at %s",
+                device.device_id,
+                device.ip_address,
+            )
             return
+        _LOGGER.debug(
+            "Creating CozyLife discovery flow for DID %s at %s",
+            device.device_id,
+            device.ip_address,
+        )
         self._async_start_discovery_flow(device)
 
     def _is_configured(self, device_id: str, ip_address: str) -> bool:
