@@ -20,6 +20,15 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     """Set up the integration-wide UDP listener lifecycle."""
 
+    hass.data.setdefault(DOMAIN, {})
+    try:
+        await async_get_background_discovery(hass)
+    except OSError as err:
+        # The listener is a discovery enhancement. Preserve already configured
+        # local entries when the OS cannot currently create a UDP socket; a
+        # later config-entry setup will retry it.
+        _LOGGER.warning("Unable to start shared CozyLife UDP discovery: %s", err)
+
     @callback
     def _async_stop_discovery(_event) -> None:
         service = hass.data.get(DOMAIN, {}).get(DATA_DISCOVERY_SERVICE)
@@ -41,15 +50,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         pkg_logger.setLevel(logging.NOTSET)
 
-    hass.data.setdefault(DOMAIN, {})
     await async_load_model_catalog(hass)
-    try:
-        discovery = await async_get_background_discovery(hass)
-    except OSError as err:
-        # UDP discovery is an enhancement; a transient socket failure must
-        # not make an already configured local device disappear at startup.
-        _LOGGER.warning("Unable to start shared CozyLife UDP discovery: %s", err)
-        discovery = None
+    discovery = hass.data[DOMAIN].get(DATA_DISCOVERY_SERVICE)
+    if discovery is None:
+        try:
+            discovery = await async_get_background_discovery(hass)
+        except OSError as err:
+            _LOGGER.warning("Unable to start shared CozyLife UDP discovery: %s", err)
+            discovery = None
 
     ip_address = entry.data["ip_address"]
 

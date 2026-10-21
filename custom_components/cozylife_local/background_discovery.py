@@ -19,6 +19,7 @@ from .cozylife_api import COZYLIFE_UDP_DISCOVERY_PORT, _get_sn
 _LOGGER = logging.getLogger(__name__)
 
 DATA_DISCOVERY_SERVICE = "background_udp_discovery"
+DATA_DISCOVERY_LOCK = "background_udp_discovery_lock"
 APK_DAEMON_INTERVAL_SECONDS = 10.0
 APK_NETWORK_CHANGE_BROADCAST_COUNT = 17
 CONFIG_FLOW_DISCOVERY_WINDOW_SECONDS = 5.0
@@ -231,9 +232,16 @@ async def async_get_background_discovery(
 ) -> CozyLifeBackgroundDiscovery:
     """Return the domain's one shared APK-style discovery service."""
     domain_data = hass.data.setdefault(DOMAIN, {})
-    service = domain_data.get(DATA_DISCOVERY_SERVICE)
-    if service is None:
-        service = CozyLifeBackgroundDiscovery(hass)
-        domain_data[DATA_DISCOVERY_SERVICE] = service
-        await service.async_start()
+    lock = domain_data.get(DATA_DISCOVERY_LOCK)
+    if lock is None:
+        lock = asyncio.Lock()
+        domain_data[DATA_DISCOVERY_LOCK] = lock
+
+    async with lock:
+        service = domain_data.get(DATA_DISCOVERY_SERVICE)
+        if service is None:
+            service = CozyLifeBackgroundDiscovery(hass)
+            domain_data[DATA_DISCOVERY_SERVICE] = service
+        if service._transport is None:
+            await service.async_start()
     return service

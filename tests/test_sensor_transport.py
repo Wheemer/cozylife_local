@@ -326,6 +326,35 @@ def test_shared_udp_listener_routes_a_known_did_without_a_second_socket() -> Non
     asyncio.run(exercise())
 
 
+def test_shared_udp_listener_creation_is_serialized() -> None:
+    """Concurrent entry setup must not create two UDP receive sockets."""
+    background_discovery = _load_background_discovery()
+
+    async def exercise() -> None:
+        hass = types.SimpleNamespace(data={})
+        starts: list[object] = []
+
+        async def start_once(service) -> None:
+            starts.append(service)
+            await asyncio.sleep(0)
+            service._transport = object()
+
+        with patch.object(
+            background_discovery.CozyLifeBackgroundDiscovery,
+            "async_start",
+            start_once,
+        ):
+            first, second = await asyncio.gather(
+                background_discovery.async_get_background_discovery(hass),
+                background_discovery.async_get_background_discovery(hass),
+            )
+
+        assert first is second
+        assert starts == [first]
+
+    asyncio.run(exercise())
+
+
 def test_persistent_transport_preserves_existing_info_state_and_set_commands() -> None:
     """The reader-based transport still supports ordinary light/switch calls."""
     CozyLifeDevice = _load_api()
