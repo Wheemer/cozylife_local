@@ -74,6 +74,8 @@ async def async_setup_entry(
 class CozyLifeSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
     """Representation of a single gang on a CozyLife Switch using a bitmask."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: CozyLifeCoordinator,
@@ -92,12 +94,11 @@ class CozyLifeSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
         self._total_entities = total_entities
         self._is_outlet = coordinator.classification.is_outlet
         
-        device_name = coordinator.device.device_model_name or "CozyLife Switch"
         if total_entities == 1:
-            self._attr_name = device_name
+            self._attr_name = None
         else:
             entity_label = "Outlet" if self._is_outlet else "Switch"
-            self._attr_name = f"{device_name} {entity_label} {self._gang_number}"
+            self._attr_name = f"{entity_label} {self._gang_number}"
         self._attr_unique_id = f"{coordinator.device.device_id}_{self._gang_number}"
         self._attr_device_class = (
             SwitchDeviceClass.OUTLET if self._is_outlet else SwitchDeviceClass.SWITCH
@@ -168,11 +169,12 @@ class CozyLifePlugBooleanSwitch(
 ):
     """Writable boolean option for the metering socket."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: CozyLifeCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = f"{coordinator.device.device_model_name} Overcurrent Protection"
+        self._attr_name = "Overcurrent protection"
         self._attr_unique_id = (
             f"{coordinator.device.device_id}_overcurrent_protection"
         )

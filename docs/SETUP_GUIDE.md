@@ -145,7 +145,7 @@ CozyLife smart lights can range from basic dimmable warm white to fully addressa
 
 ### Sleeping Battery-Powered Sensors (Temp/Humidity)
 
-Battery-powered sensors can sleep between reports. Select **Sleeping temp/humidity sensor**, provide its DHCP-reserved IP, and choose the exact supported model profile. Home Assistant creates Temperature, Humidity, and Battery entities from that profile without waiting for an initial response.
+Battery-powered sensors can sleep between reports. When one answers the integration's local UDP discovery request, Home Assistant shows its normal discovered-device card. Click **Add**; the saved announcement supplies the product identity and local address, so the integration creates the Temperature, Humidity, and Battery entities without waiting for a second response.
 
 The integration keeps the APK-derived local status transport available for valid reports, but does not configure a report interval or claim a fixed wake cadence. The device controls when it is available.
 
