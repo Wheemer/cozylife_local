@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-import time
 import types
 from pathlib import Path
 from unittest.mock import patch
@@ -333,8 +332,8 @@ def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None
     asyncio.run(exercise())
 
 
-def test_status_socket_is_recycled_on_the_observed_sensor_cadence() -> None:
-    """The observed Felisha sensor transport reconnects after thirty seconds."""
+def test_status_socket_is_retained_across_the_discovery_interval() -> None:
+    """A retained socket does not reconnect merely because ten seconds pass."""
     CozyLifeDevice = _load_api()
 
     async def exercise() -> None:
@@ -354,10 +353,9 @@ def test_status_socket_is_recycled_on_the_observed_sensor_cadence() -> None:
         try:
             assert await device.async_send_status()
             await asyncio.sleep(0.05)
-            device._connected_at = time.monotonic() - 30.1
             assert await device.async_send_status()
             await asyncio.sleep(0.05)
-            assert connections == 2
+            assert connections == 1
         finally:
             await device.async_close()
             server.close()
@@ -432,10 +430,10 @@ def test_status_send_reconnects_after_the_peer_closes() -> None:
     asyncio.run(exercise())
 
 
-def test_shared_udp_discovery_uses_the_apk_burst_on_one_receive_socket() -> None:
-    """The one shared listener preserves the APK's 17 request UDP session."""
+def test_shared_udp_discovery_uses_the_apk_daemon_cadence_on_one_socket() -> None:
+    """The shared listener emits one request per APK daemon cycle."""
     background_discovery = _load_background_discovery()
-    assert background_discovery.DISCOVERY_BROADCAST_INTERVAL_SECONDS == 0.5
+    assert background_discovery.DISCOVERY_BROADCAST_INTERVAL_SECONDS == 10.0
 
     class FakeTransport:
         def __init__(self) -> None:
@@ -450,7 +448,7 @@ def test_shared_udp_discovery_uses_the_apk_burst_on_one_receive_socket() -> None
     service._send_broadcasts(
         background_discovery.APK_NETWORK_CHANGE_BROADCAST_COUNT
     )
-    assert len(transport.sent) == 17
+    assert len(transport.sent) == 1
     for frame, address in transport.sent:
         assert address == ("255.255.255.255", 6095)
         assert frame.endswith(b"\r\n")
@@ -1004,6 +1002,44 @@ def test_powered_udp_announcement_refreshes_only_after_address_change() -> None:
 
         assert refreshes == [True]
         assert updates == [{"ip_address": "10.0.0.45"}]
+
+    asyncio.run(exercise())
+
+
+def test_sensor_udp_announcement_queues_one_gated_status_write() -> None:
+    """A known sleeping sensor receives one status write per UDP reply."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        coordinator = object.__new__(CozyLifeCoordinator)
+        entry = types.SimpleNamespace(data={"ip_address": "10.0.0.115"})
+        updates: list[dict] = []
+        status_writes: list[bool] = []
+
+        def update_entry(_entry, *, data) -> None:
+            updates.append(data)
+
+        coordinator.hass = types.SimpleNamespace(
+            config_entries=types.SimpleNamespace(async_update_entry=update_entry)
+        )
+        coordinator._entry = entry
+        coordinator._uses_sensor_polling = True
+        coordinator.device = types.SimpleNamespace()
+
+        async def update_ip_address(_ip_address: str) -> bool:
+            return False
+
+        async def send_status() -> bool:
+            status_writes.append(True)
+            return True
+
+        coordinator.device.async_update_ip_address = update_ip_address
+        coordinator.device.async_send_status = send_status
+
+        await coordinator.async_handle_discovered_address("10.0.0.115")
+
+        assert updates == []
+        assert status_writes == [True]
 
     asyncio.run(exercise())
 

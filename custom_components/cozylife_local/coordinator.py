@@ -26,11 +26,8 @@ _UPDATE_LOGGER = logging.getLogger(f"{__name__}.updates")
 _UPDATE_LOGGER.setLevel(logging.INFO)
 
 UPDATE_INTERVAL = timedelta(seconds=30)
-# Restore the October 16-18 sensor transport cadence that produced sustained
-# reports on Felisha's sensor. The connection bound is part of the cadence:
-# a sleeping device must not consume the next probe slot.
-SENSOR_CONNECT_TIMEOUT_SECONDS = 0.2
-SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.2
+# The CozyLife Android client configures a one-second local TCP connect bound.
+SENSOR_CONNECT_TIMEOUT_SECONDS = 1.0
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
@@ -98,12 +95,9 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=entry,
         )
         self.device = device
-        self._sensor_probe_task: asyncio.Task[None] | None = None
         self._identity_refresh_task: asyncio.Task[None] | None = None
-        if self._uses_sensor_polling and self._sensor_probe_task is None:
-            # A waking unit answers its local TCP request immediately. Limit
-            # each failed attempt so a sleeping unit cannot delay the next
-            # wake-window probe.
+        if self._uses_sensor_polling:
+            # Match the Android client's TCP_GLOAL_CONNECT_TIMEOUT.
             self.device.set_timeout(SENSOR_CONNECT_TIMEOUT_SECONDS)
 
         # The APK routes every valid local TCP frame to the device listener by
@@ -114,30 +108,12 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._entry = entry
 
     async def async_start_discovery(self) -> None:
-        """Start sensor wake probing after entry setup.
+        """Keep the legacy entry hook while shared discovery owns transport.
 
         UDP reception belongs to the integration-wide APK-style listener. The
         entry registers its DID with that listener during setup, avoiding one
         socket and one broadcast schedule per configured device.
         """
-        if self._uses_sensor_polling:
-            # Keep the wake-window work outside Home Assistant's startup task
-            # tree, but serialize the actual connection attempts.
-            self._sensor_probe_task = self.hass.async_create_background_task(
-                self._async_probe_sensor_wake_window(),
-                "cozylife sensor wake-window probing",
-            )
-
-    async def _async_probe_sensor_wake_window(self) -> None:
-        """Keep local connection attempts present through a short wake window."""
-        while True:
-            started = self.hass.loop.time()
-            await self.device.async_send_status()
-            remaining = SENSOR_WAKE_PROBE_INTERVAL_SECONDS - (
-                self.hass.loop.time() - started
-            )
-            if remaining > 0:
-                await asyncio.sleep(remaining)
 
     async def async_handle_discovered_address(self, ip_address: str) -> None:
         """Use an APK discovery reply to refresh this entry's local address."""
@@ -148,14 +124,16 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data={**self._entry.data, "ip_address": ip_address},
             )
         if self._uses_sensor_polling:
-            # Shared UDP discovery may announce a device every 500 ms. It
-            # updates the address only: the wake-window loop is the sole
-            # owner of sleeping-sensor status writes.
+            # The APK gates a separately queued local status action on its UDP
+            # cache. Home Assistant has no app UI refresh event, so issue one
+            # serialized cmd-2 status write only after a matching configured
+            # device answers discovery. This preserves the local gated path
+            # without a synthetic high-frequency polling loop.
+            await self.device.async_send_status()
             return
         # The UDP announcement is an identity/address update, not a state
         # response. The APK does not refresh state for an unchanged address.
-        # With the shared 500 ms UDP cadence, doing so would create a TCP
-        # refresh loop. Refresh once only after an actual address change.
+        # Refresh once only after an actual address change.
         if moved:
             await self.async_request_refresh()
 
@@ -226,13 +204,6 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_close(self) -> None:
         """Release the device reader owned by this config entry."""
-        if self._sensor_probe_task:
-            self._sensor_probe_task.cancel()
-            try:
-                await self._sensor_probe_task
-            except asyncio.CancelledError:
-                pass
-            self._sensor_probe_task = None
         if self._identity_refresh_task:
             self._identity_refresh_task.cancel()
             try:

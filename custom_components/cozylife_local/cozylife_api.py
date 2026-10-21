@@ -12,7 +12,6 @@ _RAW_LOGGER = logging.getLogger(f"{__name__}.raw")
 
 COZYLIFE_PORT = 5555
 COZYLIFE_UDP_DISCOVERY_PORT = 6095
-SENSOR_SOCKET_RECYCLE_SECONDS = 30.0
 CMD_INFO = 0
 CMD_QUERY = 2
 CMD_SET = 3
@@ -45,7 +44,6 @@ class CozyLifeDevice:
         self._reader_task: Optional[asyncio.Task[None]] = None
         self._connection_lock: Optional[asyncio.Lock] = None
         self._status_lock: Optional[asyncio.Lock] = None
-        self._connected_at: Optional[float] = None
 
     @property
     def ip_address(self) -> str:
@@ -142,7 +140,6 @@ class CozyLifeDevice:
         writer = self._writer
         self._reader = None
         self._writer = None
-        self._connected_at = None
         if writer:
             try:
                 writer.close()
@@ -366,21 +363,8 @@ class CozyLifeDevice:
 
     async def _async_send_status(self) -> bool:
         """Send one status frame while the status transport lock is held."""
-        # Felisha's sustained October 16-18 reporting was obtained with this
-        # bounded recycle. Keep ordinary powered-device sockets untouched;
-        # this method is used only by the sleeping-sensor status loop.
-        if (
-            self._writer
-            and not self._writer.is_closing()
-            and self._connected_at is not None
-            and time.monotonic() - self._connected_at >= SENSOR_SOCKET_RECYCLE_SECONDS
-        ):
-            self._disconnect()
-
-        # A waking battery sensor can accept a connection only briefly. Do
-        # not serialize a new TCP connect behind an earlier one that is still
-        # waiting for its full APK-derived deadline; install whichever probe
-        # reaches the device first, then retain that socket for the reader.
+        # Retain the socket and reader until the peer closes or the entry
+        # unloads, as the Android client's socket manager does.
         if not self._writer or self._writer.is_closing():
             try:
                 reader, writer = await asyncio.wait_for(
@@ -402,7 +386,6 @@ class CozyLifeDevice:
                 else:
                     self._reader = reader
                     self._writer = writer
-                    self._connected_at = time.monotonic()
                     self._reader_task = asyncio.create_task(
                         self._read_frames(reader, writer),
                         name=f"cozylife-reader-{self._ip_address}",
