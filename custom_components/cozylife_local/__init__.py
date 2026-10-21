@@ -1,6 +1,7 @@
 """The CozyLife (New) integration."""
 import logging
 
+from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -16,10 +17,36 @@ from .discovery import async_load_model_catalog
 _LOGGER = logging.getLogger(__name__)
 
 
+async def _async_ensure_discovery_controller(hass: HomeAssistant) -> None:
+    """Add the shared discovery controller when upgrading device-only setups.
+
+    Older releases stored one config entry per device. A user who already has
+    one of those entries has already elected to use CozyLife Local, so a
+    version upgrade must not make them manually add a second, empty entry just
+    to enable the new integration-wide discovery service.
+    """
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if not entries or any(
+        entry.data.get("entry_type") == DISCOVERY_CONTROLLER_ENTRY_TYPE
+        for entry in entries
+    ):
+        return
+
+    try:
+        await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_IMPORT},
+            data={"entry_type": DISCOVERY_CONTROLLER_ENTRY_TYPE},
+        )
+    except Exception:  # pragma: no cover - Home Assistant owns flow errors.
+        _LOGGER.exception("Unable to create the CozyLife discovery controller")
+
+
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     """Set up the integration-wide UDP listener lifecycle."""
 
     hass.data.setdefault(DOMAIN, {})
+    await _async_ensure_discovery_controller(hass)
     try:
         await async_get_background_discovery(hass)
     except OSError as err:

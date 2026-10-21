@@ -51,6 +51,18 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data={"entry_type": DISCOVERY_CONTROLLER_ENTRY_TYPE},
         )
 
+    async def async_step_import(self, import_data: Dict[str, Any]) -> FlowResult:
+        """Create the controller automatically when upgrading legacy entries."""
+        if import_data.get("entry_type") != DISCOVERY_CONTROLLER_ENTRY_TYPE:
+            return self.async_abort(reason="invalid_import")
+
+        await self.async_set_unique_id(f"{DOMAIN}_discovery_controller")
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(
+            title="CozyLife Local",
+            data={"entry_type": DISCOVERY_CONTROLLER_ENTRY_TYPE},
+        )
+
     async def async_step_integration_discovery(
         self,
         discovery_info: Dict[str, Any],
@@ -150,7 +162,9 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):
-        """Get the options flow for this handler."""
+        """Return options only for an actual device entry."""
+        if config_entry.data.get("entry_type") == DISCOVERY_CONTROLLER_ENTRY_TYPE:
+            return None
         return CozyLifeOptionsFlow(config_entry)
 
     async def _async_create_entry_from_ip(
