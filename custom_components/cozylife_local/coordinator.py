@@ -102,7 +102,12 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # each failed attempt so a sleeping unit cannot delay the next
             # wake-window probe.
             self.device.set_timeout(SENSOR_CONNECT_TIMEOUT_SECONDS)
-            self.device.set_message_listener(self._async_handle_device_message)
+
+        # The APK routes every valid local TCP frame to the device listener by
+        # the socket's local address.  Do the same for powered devices as
+        # well as sleeping sensors: some valid state reports are asynchronous
+        # and do not carry the request sequence number we sent.
+        self.device.set_message_listener(self._async_handle_device_message)
         self._entry = entry
 
     async def async_start_discovery(self) -> None:
@@ -145,7 +150,12 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # resulting asynchronous device report.
             await self.device.async_send_status()
             return
-        await self.async_request_refresh()
+        # The UDP announcement is an identity/address update, not a state
+        # response. The APK does not refresh state for an unchanged address.
+        # With the shared 500 ms UDP cadence, doing so would create a TCP
+        # refresh loop. Refresh once only after an actual address change.
+        if moved:
+            await self.async_request_refresh()
 
     async def _async_promote_sensor_identity(self) -> None:
         """Replace a sleeping-sensor setup ID after a verified local handshake.
@@ -232,23 +242,27 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_handle_device_message(self, frame: dict[str, Any]) -> None:
         """Publish a sensor report received by the persistent device reader."""
-        if not self._uses_sensor_polling:
-            return
         message = frame.get("msg", frame)
         state_data = message.get("data") if isinstance(message, dict) else None
         if not isinstance(state_data, dict):
             return
 
         received_state = {str(dpid): value for dpid, value in state_data.items()}
-        if not self._has_valid_environment_measurements(received_state):
+        if self._uses_sensor_polling and not self._has_valid_environment_measurements(
+            received_state
+        ):
             return
-        state_data = self._preserve_environment_measurements(
-            {**(self.data or {}), **received_state}
-        )
+
+        # Device state reports can be partial.  The APK delivers them to the
+        # device listener as updates, rather than discarding the prior state.
+        state_data = {**(self.data or {}), **received_state}
+        if self._uses_sensor_polling:
+            state_data = self._preserve_environment_measurements(state_data)
 
         self.async_set_updated_data(state_data)
         if (
-            self._entry.data.get("device_id", "").startswith("sleeping_sensor_")
+            self._uses_sensor_polling
+            and self._entry.data.get("device_id", "").startswith("sleeping_sensor_")
             and self._identity_refresh_task is None
         ):
             self._identity_refresh_task = self.hass.async_create_background_task(
@@ -256,7 +270,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "cozylife sensor identity verification",
             )
         _LOGGER.debug(
-            "[COZYLIFE] Received sensor report from persistent socket %s: %s",
+            "[COZYLIFE] Received local state report from persistent socket %s: %s",
             self.device.ip_address,
             received_state,
         )

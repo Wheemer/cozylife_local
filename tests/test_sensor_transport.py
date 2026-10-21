@@ -767,9 +767,67 @@ def test_persistent_transport_preserves_existing_info_state_and_set_commands() -
             assert device.dpid == ["1", "11", "18", "19", "20"]
             assert await device.async_get_state(["1", "11"]) == {"1": True, "11": 42}
             assert await device.async_set_state({"1": False})
+            await asyncio.sleep(0.05)
             assert len(requests) == 4
             assert requests[-1]["cmd"] == 3
             assert requests[-1]["msg"] == {"attr": [1], "data": {"1": False}}
+        finally:
+            await device.async_close()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
+def test_property_write_succeeds_without_a_correlated_reply() -> None:
+    """The APK regards a completed local CMD_SET write as success."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        async def handler(reader, writer) -> None:
+            request = json.loads((await reader.readline()).decode())
+            assert request["cmd"] == 3
+            assert request["msg"] == {"attr": [1], "data": {"1": False}}
+            # Deliberately no reply: the APK writer does not wait for one.
+            await asyncio.sleep(0.05)
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handler, "127.0.0.1", 5555)
+        device = CozyLifeDevice("127.0.0.1", timeout=0.1)
+        try:
+            assert await device.async_set_state({"1": False})
+        finally:
+            await device.async_close()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
+def test_state_query_accepts_apk_local_reply_without_res() -> None:
+    """APK local replies are valid JSON frames even when res is omitted."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        async def handler(reader, writer) -> None:
+            request = json.loads((await reader.readline()).decode())
+            assert request["cmd"] == 2
+            writer.write(
+                (json.dumps({
+                    "cmd": 2,
+                    "sn": request["sn"],
+                    "msg": {"data": {"1": True, "11": 42}},
+                }) + "\r\n").encode()
+            )
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handler, "127.0.0.1", 5555)
+        device = CozyLifeDevice("127.0.0.1", timeout=1.0)
+        try:
+            assert await device.async_get_status() == {"1": True, "11": 42}
         finally:
             await device.async_close()
             server.close()
@@ -877,6 +935,29 @@ def test_platforms_exclude_home_assistant_schedule_emulation() -> None:
     assert "time" not in PLATFORMS
 
 
+def test_powered_device_accepts_apk_style_async_state_report() -> None:
+    """Every valid local frame updates its owning device, as in the APK."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        coordinator = object.__new__(CozyLifeCoordinator)
+        coordinator._uses_sensor_polling = False
+        coordinator.data = {"1": True, "11": 42}
+        coordinator.device = types.SimpleNamespace(ip_address="10.0.0.44")
+        updates: list[dict] = []
+        coordinator.async_set_updated_data = updates.append
+
+        # This reply is valid local state traffic, but it is deliberately not
+        # tied to a request SN. The APK still delivers it to the DID listener.
+        await coordinator._async_handle_device_message(
+            {"cmd": 2, "sn": "device-event", "msg": {"data": {"1": False}}}
+        )
+
+        assert updates == [{"1": False, "11": 42}]
+
+    asyncio.run(exercise())
+
+
 def test_environment_report_accepts_a_valid_partial_measurement() -> None:
     """A valid reading must not be discarded because its paired DPID is absent."""
     CozyLifeCoordinator = _load_coordinator()
@@ -887,6 +968,44 @@ def test_environment_report_accepts_a_valid_partial_measurement() -> None:
     assert coordinator._has_valid_environment_measurements({"4": 48})
     assert not coordinator._has_valid_environment_measurements({"8": 0})
     assert not coordinator._has_valid_environment_measurements({"4": 0})
+
+
+def test_powered_udp_announcement_refreshes_only_after_address_change() -> None:
+    """An unchanged APK announcement must not turn UDP cadence into TCP polling."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        coordinator = object.__new__(CozyLifeCoordinator)
+        updates: list[dict] = []
+        refreshes: list[bool] = []
+        entry = types.SimpleNamespace(data={"ip_address": "10.0.0.44"})
+
+        def update_entry(_entry, *, data) -> None:
+            updates.append(data)
+
+        coordinator.hass = types.SimpleNamespace(
+            config_entries=types.SimpleNamespace(async_update_entry=update_entry)
+        )
+        coordinator._entry = entry
+        coordinator._uses_sensor_polling = False
+        coordinator.device = types.SimpleNamespace()
+
+        async def update_ip_address(ip_address: str) -> bool:
+            return ip_address == "10.0.0.45"
+
+        async def request_refresh() -> None:
+            refreshes.append(True)
+
+        coordinator.device.async_update_ip_address = update_ip_address
+        coordinator.async_request_refresh = request_refresh
+
+        await coordinator.async_handle_discovered_address("10.0.0.44")
+        await coordinator.async_handle_discovered_address("10.0.0.45")
+
+        assert refreshes == [True]
+        assert updates == [{"ip_address": "10.0.0.45"}]
+
+    asyncio.run(exercise())
 
 
 def test_sleeping_sensor_promotes_verified_local_device_id() -> None:

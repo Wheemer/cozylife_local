@@ -188,7 +188,9 @@ class CozyLifeDevice:
                 sent_sn = frame.get("sn")
                 future = self._pending_responses.pop(sent_sn, None)
                 if future and not future.done():
-                    future.set_result(frame.get("msg") if frame.get("res") == 0 else None)
+                    future.set_result(
+                        frame.get("msg") if frame.get("res", 0) == 0 else None
+                    )
 
                 listener = self._message_listener
                 if listener is not None:
@@ -230,6 +232,31 @@ class CozyLifeDevice:
         except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
             self._disconnect()
             return None
+
+    async def _async_send(self, cmd: int, payload: Dict[str, Any]) -> bool:
+        """Write one APK-shaped local command without requiring an ACK frame.
+
+        CozyLife's local writer marks a command sent after the socket write and
+        leaves every later state frame to its address-routed reader.  In
+        particular, a CMD_SET does not need a correlated response to be a
+        successful device command.
+        """
+        try:
+            await self._connect()
+            writer = self._writer
+            if writer is None:
+                return False
+            message = self._create_message(cmd, payload)
+            encoded_message = (
+                json.dumps(message, separators=(",", ":")) + "\r\n"
+            ).encode("utf8")
+            _RAW_LOGGER.debug("Sending to %s: %r", self._ip_address, encoded_message)
+            writer.write(encoded_message)
+            await writer.drain()
+            return True
+        except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+            self._disconnect()
+            return False
 
     def _create_message(self, cmd: int, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Helper to create the JSON message structure."""
@@ -407,12 +434,5 @@ class CozyLifeDevice:
             return False
 
     async def async_set_state(self, attributes: Dict[str, Any]) -> bool:
-        """Sets attributes on the device."""
-        msg = await self._send_receive(CMD_SET, attributes)
-        # For CMD_SET, the response msg contains the set attributes if successful.
-        # We can compare it with the sent attributes for confirmation.
-        if msg and 'data' in msg:
-            # A more robust check would compare the sent attributes with the received
-            # for exact match, but for now, just checking 'data' is present
-            return True
-        return False
+        """Write a local property update using the APK's send-success semantics."""
+        return await self._async_send(CMD_SET, attributes)
