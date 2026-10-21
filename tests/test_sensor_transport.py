@@ -305,7 +305,7 @@ def test_status_write_uses_apk_frame_and_dispatches_unsolicited_report() -> None
         reports: list[dict] = []
 
         async def handler(reader, writer) -> None:
-            request = json.loads((await reader.readline()).decode())
+            request = json.loads((await reader.read(4096)).decode())
             assert request["cmd"] == 2
             assert request["pv"] == 0
             assert request["msg"] == {"attr": [1]}
@@ -343,7 +343,7 @@ def test_status_socket_is_recycled_on_the_configured_cadence() -> None:
         async def handler(reader, writer) -> None:
             nonlocal connections
             connections += 1
-            while await reader.readline():
+            while await reader.read(4096):
                 writer.write(b'{"cmd":2,"sn":"report","msg":{"data":{"4":50}}}\r\n')
                 await writer.drain()
             writer.close()
@@ -377,8 +377,12 @@ def test_concurrent_status_requests_share_one_persistent_socket() -> None:
         async def handler(reader, writer) -> None:
             nonlocal connections
             connections += 1
+            raw_requests = (await reader.read(4096)).decode()
+            decoder = json.JSONDecoder()
             for _ in range(2):
-                requests.append(json.loads((await reader.readline()).decode()))
+                request, index = decoder.raw_decode(raw_requests)
+                requests.append(request)
+                raw_requests = raw_requests[index:]
             writer.close()
             await writer.wait_closed()
 
@@ -412,7 +416,7 @@ def test_status_send_reconnects_after_the_peer_closes() -> None:
         async def handler(reader, writer) -> None:
             nonlocal connections
             connections += 1
-            await reader.readline()
+            await reader.read(4096)
             writer.close()
             await writer.wait_closed()
 
@@ -742,7 +746,7 @@ def test_persistent_transport_preserves_existing_info_state_and_set_commands() -
         requests: list[dict] = []
 
         async def handler(reader, writer) -> None:
-            while raw_request := await reader.readline():
+            while raw_request := await reader.read(4096):
                 request = json.loads(raw_request.decode())
                 requests.append(request)
                 if request["cmd"] == 0:
@@ -785,7 +789,7 @@ def test_property_write_succeeds_without_a_correlated_reply() -> None:
 
     async def exercise() -> None:
         async def handler(reader, writer) -> None:
-            request = json.loads((await reader.readline()).decode())
+            request = json.loads((await reader.read(4096)).decode())
             assert request["cmd"] == 3
             assert request["msg"] == {"attr": [1], "data": {"1": False}}
             # Deliberately no reply: the APK writer does not wait for one.
@@ -811,7 +815,7 @@ def test_state_query_accepts_apk_local_reply_without_res() -> None:
 
     async def exercise() -> None:
         async def handler(reader, writer) -> None:
-            request = json.loads((await reader.readline()).decode())
+            request = json.loads((await reader.read(4096)).decode())
             assert request["cmd"] == 2
             writer.write(
                 (json.dumps({
