@@ -920,6 +920,44 @@ def test_environment_report_accepts_a_valid_partial_measurement() -> None:
     assert not coordinator._has_valid_environment_measurements({"4": 0})
 
 
+def test_powered_udp_announcement_refreshes_only_after_address_change() -> None:
+    """An unchanged APK announcement must not turn UDP cadence into TCP polling."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        coordinator = object.__new__(CozyLifeCoordinator)
+        updates: list[dict] = []
+        refreshes: list[bool] = []
+        entry = types.SimpleNamespace(data={"ip_address": "10.0.0.44"})
+
+        def update_entry(_entry, *, data) -> None:
+            updates.append(data)
+
+        coordinator.hass = types.SimpleNamespace(
+            config_entries=types.SimpleNamespace(async_update_entry=update_entry)
+        )
+        coordinator._entry = entry
+        coordinator._uses_sensor_polling = False
+        coordinator.device = types.SimpleNamespace()
+
+        async def update_ip_address(ip_address: str) -> bool:
+            return ip_address == "10.0.0.45"
+
+        async def request_refresh() -> None:
+            refreshes.append(True)
+
+        coordinator.device.async_update_ip_address = update_ip_address
+        coordinator.async_request_refresh = request_refresh
+
+        await coordinator.async_handle_discovered_address("10.0.0.44")
+        await coordinator.async_handle_discovered_address("10.0.0.45")
+
+        assert refreshes == [True]
+        assert updates == [{"ip_address": "10.0.0.45"}]
+
+    asyncio.run(exercise())
+
+
 def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
     """A provisional setup ID is replaced only by a matching local handshake."""
     CozyLifeCoordinator = _load_coordinator()

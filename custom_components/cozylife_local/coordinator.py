@@ -145,7 +145,12 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # resulting asynchronous device report.
             await self.device.async_send_status()
             return
-        await self.async_request_refresh()
+        # The UDP announcement is an identity/address update, not a state
+        # response. The APK does not refresh state for an unchanged address.
+        # With the shared 500 ms UDP cadence, doing so would create a TCP
+        # refresh loop. Refresh once only after an actual address change.
+        if moved:
+            await self.async_request_refresh()
 
     async def _async_promote_sensor_identity(self) -> None:
         """Replace a sleeping-sensor setup ID after a verified local handshake.
