@@ -85,7 +85,7 @@ Look for hostnames representing popular IoT chips used by CozyLife. Common hostn
 *   `CozyLife_XXXXXX`
 
 #### Method C: Network Scanner Tools
-Use tools like **Angry IP Scanner** (PC/Mac) or **Fing** (Mobile App) to scan port `5555`. All online CozyLife devices listen on **port 5555** (both UDP and TCP).
+Use tools like **Angry IP Scanner** (PC/Mac) or **Fing** (Mobile App) to scan **TCP** port `5555`. CozyLife's APK-style local discovery is a separate **UDP** broadcast exchange on port `6095`; a TCP scan cannot substitute for that discovery exchange.
 
 ---
 
