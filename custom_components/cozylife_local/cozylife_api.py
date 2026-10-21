@@ -340,9 +340,10 @@ class CozyLifeDevice:
 
     async def _async_send_status(self) -> bool:
         """Send one status frame while the status transport lock is held."""
-        # The APK's shared TCP pool is cleaned by its 10-second app daemon.
-        # Recycle the local sensor socket on the same cadence so a later wake
-        # window gets a new TCP connection rather than writes to a stale one.
+        # The APK's UDP daemon cadence and this TCP lifecycle are separate.
+        # Recycle a retained sensor socket after the integration's 30-second
+        # local transport window so a later wake probe does not write to a
+        # stale peer connection.
         if (
             self._writer
             and not self._writer.is_closing()

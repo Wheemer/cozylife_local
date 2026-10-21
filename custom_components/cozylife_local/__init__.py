@@ -42,6 +42,10 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up CozyLife (New) from a config entry."""
 
+    # Home Assistant calls async_setup before config entries, but retain this
+    # harmless guard for direct setup/reload paths and isolated test harnesses.
+    hass.data.setdefault(DOMAIN, {})
+
     # Check for debug logging option
     pkg_logger = logging.getLogger(__package__)
     if entry.options.get("enable_debug", False):
