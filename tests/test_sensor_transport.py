@@ -908,6 +908,29 @@ def test_platforms_exclude_home_assistant_schedule_emulation() -> None:
     assert "time" not in PLATFORMS
 
 
+def test_powered_device_accepts_apk_style_async_state_report() -> None:
+    """Every valid local frame updates its owning device, as in the APK."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        coordinator = object.__new__(CozyLifeCoordinator)
+        coordinator._uses_sensor_polling = False
+        coordinator.data = {"1": True, "11": 42}
+        coordinator.device = types.SimpleNamespace(ip_address="10.0.0.44")
+        updates: list[dict] = []
+        coordinator.async_set_updated_data = updates.append
+
+        # This reply is valid local state traffic, but it is deliberately not
+        # tied to a request SN. The APK still delivers it to the DID listener.
+        await coordinator._async_handle_device_message(
+            {"cmd": 2, "sn": "device-event", "msg": {"data": {"1": False}}}
+        )
+
+        assert updates == [{"1": False, "11": 42}]
+
+    asyncio.run(exercise())
+
+
 def test_environment_report_accepts_a_valid_partial_measurement() -> None:
     """A valid reading must not be discarded because its paired DPID is absent."""
     CozyLifeCoordinator = _load_coordinator()
