@@ -12,7 +12,6 @@ _RAW_LOGGER = logging.getLogger(f"{__name__}.raw")
 
 COZYLIFE_PORT = 5555
 COZYLIFE_UDP_DISCOVERY_PORT = 6095
-SENSOR_SOCKET_RECYCLE_SECONDS = 30.0
 CMD_INFO = 0
 CMD_QUERY = 2
 CMD_SET = 3
@@ -41,11 +40,11 @@ class CozyLifeDevice:
         self._dpid: Optional[List[str]] = None
         self._device_type_code: Optional[str] = None
         self._pending_responses: Dict[str, asyncio.Future[Optional[Dict[str, Any]]]] = {}
+        self._state_waiters: list[asyncio.Future[Dict[str, Any]]] = []
         self._message_listener: Optional[Callable[[Dict[str, Any]], Any]] = None
         self._reader_task: Optional[asyncio.Task[None]] = None
         self._connection_lock: Optional[asyncio.Lock] = None
         self._status_lock: Optional[asyncio.Lock] = None
-        self._connected_at: Optional[float] = None
 
     @property
     def ip_address(self) -> str:
@@ -142,7 +141,6 @@ class CozyLifeDevice:
         writer = self._writer
         self._reader = None
         self._writer = None
-        self._connected_at = None
         if writer:
             try:
                 writer.close()
@@ -153,6 +151,10 @@ class CozyLifeDevice:
             if not future.done():
                 future.set_result(None)
         self._pending_responses.clear()
+        for future in self._state_waiters:
+            if not future.done():
+                future.set_result({})
+        self._state_waiters.clear()
 
     async def async_close(self) -> None:
         """Release the persistent TCP reader when its config entry unloads."""
@@ -190,6 +192,17 @@ class CozyLifeDevice:
                     future.set_result(
                         frame.get("msg") if frame.get("res", 0) == 0 else None
                     )
+
+                message = frame.get("msg")
+                state_data = message.get("data") if isinstance(message, dict) else None
+                if isinstance(state_data, dict):
+                    normalized_state = {
+                        str(key): value for key, value in state_data.items()
+                    }
+                    for state_waiter in self._state_waiters:
+                        if not state_waiter.done():
+                            state_waiter.set_result(normalized_state)
+                    self._state_waiters.clear()
 
                 listener = self._message_listener
                 if listener is not None:
@@ -330,96 +343,67 @@ class CozyLifeDevice:
         )
         return True
 
-    async def async_get_state(self, dpids: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
-        """Queries the current state of the device."""
-        payload = {}
-        if dpids:
-            payload["attr"] = [int(dpid) for dpid in dpids]
-
-        msg = await self._send_receive(CMD_QUERY, payload)
-        if msg and 'data' in msg:
-            return {str(k): v for k, v in msg['data'].items()}
-        return None
-
     async def async_get_status(self) -> Optional[Dict[str, Any]]:
-        """Use the APK's local refresh request: cmd 2 with ``attr:[1]``."""
-        msg = await self._send_receive(CMD_QUERY, {"attr": [1]})
-        if msg and "data" in msg:
-            return {str(key): value for key, value in msg["data"].items()}
-        return None
-
-    async def async_send_status(self) -> bool:
-        """Write the APK status request without waiting for an accepted reply.
-
-        Cozy Life's ``WifiTcpMessage.expectAccept`` is false.  Its reader,
-        rather than the writer, receives the asynchronous sensor report.
-        """
+        """Request APK status and await the next state frame, not a matching SN."""
         if self._status_lock is None:
             self._status_lock = asyncio.Lock()
 
-        # The discovery callback and the wake-window loop can both request a
-        # status frame.  Keep their connect/write operations strictly serial:
-        # one durable socket is preferable to briefly opening two competing
-        # sockets while the device is awake.
         async with self._status_lock:
-            return await self._async_send_status()
+            return await self._async_request_status(wait_for_state=True)
 
-    async def _async_send_status(self) -> bool:
-        """Send one status frame while the status transport lock is held."""
-        # Felisha's sustained October 16-18 reporting was obtained with this
-        # bounded recycle. Keep ordinary powered-device sockets untouched;
-        # this method is used only by the sleeping-sensor status loop.
-        if (
-            self._writer
-            and not self._writer.is_closing()
-            and self._connected_at is not None
-            and time.monotonic() - self._connected_at >= SENSOR_SOCKET_RECYCLE_SECONDS
-        ):
-            self._disconnect()
+    async def async_send_status(self) -> bool:
+        """Write the APK status request without requiring an accepted reply."""
+        if self._status_lock is None:
+            self._status_lock = asyncio.Lock()
 
-        # A waking battery sensor can accept a connection only briefly. Do
-        # not serialize a new TCP connect behind an earlier one that is still
-        # waiting for its full APK-derived deadline; install whichever probe
-        # reaches the device first, then retain that socket for the reader.
-        if not self._writer or self._writer.is_closing():
-            try:
-                reader, writer = await asyncio.wait_for(
-                    asyncio.open_connection(self._ip_address, COZYLIFE_PORT),
-                    timeout=self._timeout,
-                )
-            except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
-                return False
+        async with self._status_lock:
+            return (await self._async_request_status(wait_for_state=False)) is not None
 
-            if self._connection_lock is None:
-                self._connection_lock = asyncio.Lock()
-            async with self._connection_lock:
-                if self._writer and not self._writer.is_closing():
-                    writer.close()
-                    try:
-                        await writer.wait_closed()
-                    except OSError:
-                        pass
-                else:
-                    self._reader = reader
-                    self._writer = writer
-                    self._connected_at = time.monotonic()
-                    self._reader_task = asyncio.create_task(
-                        self._read_frames(reader, writer),
-                        name=f"cozylife-reader-{self._ip_address}",
-                    )
+    async def _async_request_status(
+        self,
+        *,
+        wait_for_state: bool,
+    ) -> Optional[Dict[str, Any]]:
+        """Use the APK write-and-listen status path over one durable socket."""
         try:
+            await self._connect()
             writer = self._writer
             if writer is None:
-                return False
+                return None
+
+            state_waiter: asyncio.Future[Dict[str, Any]] | None = None
+            if wait_for_state:
+                state_waiter = asyncio.get_running_loop().create_future()
+                self._state_waiters.append(state_waiter)
+
             message = self._create_message(CMD_QUERY, {"attr": [1]})
-            writer.write(
-                (json.dumps(message, separators=(",", ":")) + "\r\n").encode("utf8")
-            )
+            encoded_message = (
+                json.dumps(message, separators=(",", ":")) + "\r\n"
+            ).encode("utf8")
+            _RAW_LOGGER.debug("Sending to %s: %r", self._ip_address, encoded_message)
+            writer.write(encoded_message)
             await writer.drain()
-            return True
+
+            if state_waiter is None:
+                return {}
+
+            try:
+                state_data = await asyncio.wait_for(
+                    asyncio.shield(state_waiter), timeout=self._timeout
+                )
+                return state_data or None
+            except asyncio.TimeoutError:
+                _LOGGER.warning(
+                    "Timeout waiting for an APK-style state frame from %s",
+                    self._ip_address,
+                )
+                return None
+            finally:
+                if state_waiter in self._state_waiters:
+                    self._state_waiters.remove(state_waiter)
         except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
             self._disconnect()
-            return False
+            return None
 
     async def async_set_state(self, attributes: Dict[str, Any]) -> bool:
         """Write a local property update using the APK's send-success semantics."""

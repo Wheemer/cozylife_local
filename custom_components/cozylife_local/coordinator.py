@@ -8,16 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .background_discovery import async_get_background_discovery
-from .const import (
-    LIGHT_COUNTDOWN,
-    PLUG_CURRENT,
-    PLUG_LED_STATUS,
-    PLUG_OVERCURRENT_PROTECTION,
-    PLUG_POWER_ON_STATE,
-    PLUG_VOLTAGE,
-    SENSOR_HUMIDITY,
-    SENSOR_TEMPERATURE,
-)
+from .const import SENSOR_HUMIDITY, SENSOR_TEMPERATURE
 from .cozylife_api import CozyLifeDevice
 from .discovery import classify_device
 
@@ -26,24 +17,13 @@ _UPDATE_LOGGER = logging.getLogger(f"{__name__}.updates")
 _UPDATE_LOGGER.setLevel(logging.INFO)
 
 UPDATE_INTERVAL = timedelta(seconds=30)
-# Restore the October 16-18 sensor transport cadence that produced sustained
-# reports on Felisha's sensor. The connection bound is part of the cadence:
-# a sleeping device must not consume the next probe slot.
+# These are local attempt bounds, not a claimed sensor wake or report schedule.
 SENSOR_CONNECT_TIMEOUT_SECONDS = 0.2
-SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.2
+SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.5
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
 }
-EXTRA_SWITCH_OPTION_DPIDS = (
-    PLUG_POWER_ON_STATE,
-    PLUG_OVERCURRENT_PROTECTION,
-    PLUG_LED_STATUS,
-)
-EXTRA_PLUG_METERING_DPIDS = (
-    PLUG_CURRENT,
-    PLUG_VOLTAGE,
-)
 
 
 def _is_valid_environment_measurement(
@@ -100,10 +80,9 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.device = device
         self._sensor_probe_task: asyncio.Task[None] | None = None
         self._identity_refresh_task: asyncio.Task[None] | None = None
-        if self._uses_sensor_polling and self._sensor_probe_task is None:
-            # A waking unit answers its local TCP request immediately. Limit
-            # each failed attempt so a sleeping unit cannot delay the next
-            # wake-window probe.
+        if self._uses_sensor_polling:
+            # Bound a failed local attempt so a sleeping device cannot consume
+            # the next half-second wake-window attempt.
             self.device.set_timeout(SENSOR_CONNECT_TIMEOUT_SECONDS)
 
         # The APK routes every valid local TCP frame to the device listener by
@@ -114,22 +93,20 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._entry = entry
 
     async def async_start_discovery(self) -> None:
-        """Start sensor wake probing after entry setup.
+        """Start local wake-window attempts for a configured sensor entry.
 
-        UDP reception belongs to the integration-wide APK-style listener. The
-        entry registers its DID with that listener during setup, avoiding one
-        socket and one broadcast schedule per configured device.
+        The sensor firmware controls when it wakes and reports. This task only
+        keeps a lightweight local status request available at a fixed host-side
+        cadence; it does not infer any sensor reporting interval.
         """
-        if self._uses_sensor_polling:
-            # Keep the wake-window work outside Home Assistant's startup task
-            # tree, but serialize the actual connection attempts.
+        if self._uses_sensor_polling and self._sensor_probe_task is None:
             self._sensor_probe_task = self.hass.async_create_background_task(
                 self._async_probe_sensor_wake_window(),
                 "cozylife sensor wake-window probing",
             )
 
     async def _async_probe_sensor_wake_window(self) -> None:
-        """Keep local connection attempts present through a short wake window."""
+        """Issue one serialized local status request every half second."""
         while True:
             started = self.hass.loop.time()
             await self.device.async_send_status()
@@ -148,14 +125,16 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data={**self._entry.data, "ip_address": ip_address},
             )
         if self._uses_sensor_polling:
-            # Shared UDP discovery may announce a device every 500 ms. It
-            # updates the address only: the wake-window loop is the sole
-            # owner of sleeping-sensor status writes.
+            # The APK gates a separately queued local status action on its UDP
+            # cache. Home Assistant has no app UI refresh event, so issue one
+            # serialized cmd-2 status write only after a matching configured
+            # device answers discovery. This preserves the local gated path
+            # without a synthetic high-frequency polling loop.
+            await self.device.async_send_status()
             return
         # The UDP announcement is an identity/address update, not a state
         # response. The APK does not refresh state for an unchanged address.
-        # With the shared 500 ms UDP cadence, doing so would create a TCP
-        # refresh loop. Refresh once only after an actual address change.
+        # Refresh once only after an actual address change.
         if moved:
             await self.async_request_refresh()
 
@@ -343,63 +322,6 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
         return state_data
 
-    async def _async_add_hidden_switch_state(
-        self,
-        state_data: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Merge switch option DPIDs that are omitted from default state."""
-        if not self.classification.supports_switch_entities:
-            return state_data
-
-        known_dpids = set(self.device.dpid or [])
-
-        candidate_dpids = set(EXTRA_SWITCH_OPTION_DPIDS)
-        if self.classification.supports_plug_metering:
-            candidate_dpids.update(EXTRA_PLUG_METERING_DPIDS)
-
-        missing_dpids = [
-            dpid
-            for dpid in candidate_dpids
-            if dpid in known_dpids and dpid not in state_data
-        ]
-        if not missing_dpids:
-            return state_data
-
-        hidden_state = await self.device.async_get_state(missing_dpids)
-        if hidden_state is None:
-            _LOGGER.debug(
-                "[COZYLIFE] Failed to query hidden switch DPIDs %s from %s",
-                missing_dpids,
-                self.device.ip_address,
-            )
-            return state_data
-
-        return {**state_data, **hidden_state}
-
-    async def _async_add_hidden_light_state(
-        self,
-        state_data: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Merge safe light countdown state omitted from default state."""
-        if not self.classification.is_light or LIGHT_COUNTDOWN in state_data:
-            return state_data
-
-        known_dpids = set(self.device.dpid or [])
-
-        if LIGHT_COUNTDOWN not in known_dpids:
-            return state_data
-
-        hidden_state = await self.device.async_get_state([LIGHT_COUNTDOWN])
-        if hidden_state is None:
-            _LOGGER.debug(
-                "[COZYLIFE] Failed to query hidden light countdown DPID %s from %s",
-                LIGHT_COUNTDOWN,
-                self.device.ip_address,
-            )
-            return state_data
-
-        return {**state_data, **hidden_state}
-
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from device."""
         try:
@@ -421,8 +343,8 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     data={**self._entry.data, "ip_address": self.device.ip_address},
                 )
 
-            state_data = await self._async_add_hidden_switch_state(state_data)
-            state_data = await self._async_add_hidden_light_state(state_data)
+            # CMD 2 / attr:[1] is the APK complete local status request.
+            # Do not synthesize extra per-DPID reads that the APK does not send.
             state_data = self._preserve_environment_measurements(state_data)
             _LOGGER.debug(f"[COZYLIFE] Successfully fetched state for {self.device.ip_address}: {state_data}")
             return state_data

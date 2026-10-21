@@ -23,11 +23,10 @@ _LOGGER = logging.getLogger(__name__)
 DATA_DISCOVERY_SERVICE = "background_udp_discovery"
 DATA_DISCOVERY_LOCK = "background_udp_discovery_lock"
 DATA_DISCOVERY_STOP_UNSUB = "background_udp_discovery_stop_unsub"
-# The APK broadcasts less often, but an environment sensor can be awake for a
-# short, variable window. Keep the shared discovery request present at the
-# same 500 ms cadence used by the known-address sensor probe.
+# This is Home Assistant's local discovery attempt cadence. It is not a
+# claimed sensor report schedule: a battery sensor decides its own wakeups.
 DISCOVERY_BROADCAST_INTERVAL_SECONDS = 0.5
-APK_NETWORK_CHANGE_BROADCAST_COUNT = 17
+APK_NETWORK_CHANGE_BROADCAST_COUNT = 1
 
 
 @dataclass(frozen=True)
@@ -99,8 +98,7 @@ class CozyLifeBackgroundDiscovery:
         )
         self._transport = transport
 
-        # The APK emits this burst when its active network becomes Wi-Fi. Home
-        # Assistant startup is the corresponding point at which this service
+        # Home Assistant startup is the equivalent point at which this service
         # first has an active local network.
         self._send_broadcasts(APK_NETWORK_CHANGE_BROADCAST_COUNT)
         self._broadcast_task = self.hass.async_create_background_task(
@@ -109,7 +107,7 @@ class CozyLifeBackgroundDiscovery:
         )
         _LOGGER.info(
             "CozyLife UDP discovery is listening on one shared socket; sent %s "
-            "APK network-start broadcasts",
+            "APK-style startup discovery request",
             APK_NETWORK_CHANGE_BROADCAST_COUNT,
         )
 
@@ -156,7 +154,7 @@ class CozyLifeBackgroundDiscovery:
         self._address_callbacks.pop(ip_address, None)
 
     async def _async_broadcast_loop(self) -> None:
-        """Keep one shared UDP discovery request present for sensor wake windows."""
+        """Keep a shared discovery request present across sensor wake windows."""
         while True:
             await asyncio.sleep(DISCOVERY_BROADCAST_INTERVAL_SECONDS)
             self._send_broadcasts(1)
