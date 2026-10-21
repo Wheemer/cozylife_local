@@ -52,7 +52,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await async_load_model_catalog(hass)
     discovery = hass.data[DOMAIN].get(DATA_DISCOVERY_SERVICE)
-    if discovery is None:
+    if discovery is None or not discovery.is_running:
         try:
             discovery = await async_get_background_discovery(hass)
         except OSError as err:

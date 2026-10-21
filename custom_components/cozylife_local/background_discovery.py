@@ -122,6 +122,11 @@ class CozyLifeBackgroundDiscovery:
             self._transport.close()
             self._transport = None
 
+    @property
+    def is_running(self) -> bool:
+        """Return whether the shared receive socket is currently open."""
+        return self._transport is not None
+
     def register_device(
         self,
         device_id: str,

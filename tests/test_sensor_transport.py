@@ -360,6 +360,41 @@ def test_shared_udp_listener_creation_is_serialized() -> None:
     asyncio.run(exercise())
 
 
+def test_shared_udp_listener_retries_after_socket_start_failure() -> None:
+    """A transient UDP bind failure must not poison later entry setup."""
+    background_discovery = _load_background_discovery()
+
+    async def exercise() -> None:
+        hass = types.SimpleNamespace(data={})
+        attempts = 0
+
+        async def start_with_one_failure(service) -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise OSError("temporary socket failure")
+            service._transport = object()
+
+        with patch.object(
+            background_discovery.CozyLifeBackgroundDiscovery,
+            "async_start",
+            start_with_one_failure,
+        ):
+            try:
+                await background_discovery.async_get_background_discovery(hass)
+            except OSError:
+                pass
+            else:
+                raise AssertionError("first socket attempt should fail")
+
+            service = await background_discovery.async_get_background_discovery(hass)
+
+        assert attempts == 2
+        assert service.is_running
+
+    asyncio.run(exercise())
+
+
 def test_shared_udp_listener_uses_home_assistant_discovery_flow_helper() -> None:
     """An unconfigured announcement becomes one native discovery flow."""
     background_discovery = _load_background_discovery()
