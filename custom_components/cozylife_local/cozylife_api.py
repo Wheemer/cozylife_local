@@ -9,7 +9,6 @@ from .discovery import get_model_info
 
 _LOGGER = logging.getLogger(__name__)
 _RAW_LOGGER = logging.getLogger(f"{__name__}.raw")
-_RAW_LOGGER.setLevel(logging.INFO)
 
 COZYLIFE_PORT = 5555
 COZYLIFE_UDP_DISCOVERY_PORT = 6095
