@@ -155,6 +155,44 @@ def test_config_flow_creates_a_no_fields_discovery_controller() -> None:
     asyncio.run(exercise())
 
 
+def test_config_flow_import_creates_a_discovery_controller() -> None:
+    """A legacy device-only setup receives one controller on upgrade."""
+    config_flow = _load_config_flow()
+
+    async def exercise() -> None:
+        flow = object.__new__(config_flow.CozyLifeConfigFlow)
+        unique_ids: list[str] = []
+        entries: list[dict] = []
+
+        async def set_unique_id(unique_id: str) -> None:
+            unique_ids.append(unique_id)
+
+        flow.async_set_unique_id = set_unique_id
+        flow._abort_if_unique_id_configured = lambda: None
+        flow.async_create_entry = lambda **kwargs: entries.append(kwargs) or kwargs
+
+        result = await flow.async_step_import({"entry_type": "discovery_controller"})
+
+        assert unique_ids == ["cozylife_local_discovery_controller"]
+        assert entries == [
+            {
+                "title": "CozyLife Local",
+                "data": {"entry_type": "discovery_controller"},
+            }
+        ]
+        assert result == entries[0]
+
+    asyncio.run(exercise())
+
+
+def test_discovery_controller_has_no_options_flow() -> None:
+    """The generic controller has no user-facing configuration page."""
+    config_flow = _load_config_flow()
+    controller = types.SimpleNamespace(data={"entry_type": "discovery_controller"})
+
+    assert config_flow.CozyLifeConfigFlow.async_get_options_flow(controller) is None
+
+
 def test_udp_discovery_shows_normal_confirmation_before_adding() -> None:
     """A UDP candidate follows Home Assistant's ordinary Add-device flow."""
     config_flow = _load_config_flow()
