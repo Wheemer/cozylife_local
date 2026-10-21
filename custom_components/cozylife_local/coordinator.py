@@ -135,10 +135,11 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self.device.async_send_status()
             return
         # A matching UDP reply is the local-presence gate for the APK's Wi-Fi
-        # writer. Request exactly one local cmd-2 refresh in that fresh window,
-        # including when the address is unchanged. This is event-driven by a
-        # device announcement, not a free-running TCP poll.
-        await self.async_request_refresh()
+        # writer. Send exactly one local cmd-2 request in that fresh window,
+        # including when the address is unchanged. The APK does not wait for a
+        # correlated reply here; the persistent reader publishes any later
+        # frame, so a delayed reply cannot mark the device unavailable.
+        await self.device.async_send_status()
 
     async def _async_promote_sensor_identity(self) -> None:
         """Replace a sleeping-sensor setup ID after a verified local handshake.

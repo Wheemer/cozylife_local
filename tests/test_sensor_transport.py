@@ -979,14 +979,14 @@ def test_environment_report_accepts_a_valid_partial_measurement() -> None:
     assert not coordinator._has_valid_environment_measurements({"4": 0})
 
 
-def test_powered_udp_announcement_gates_one_local_refresh_per_reply() -> None:
-    """Every fresh matching UDP reply gates one local powered-device refresh."""
+def test_powered_udp_announcement_gates_one_status_write_per_reply() -> None:
+    """Every fresh matching UDP reply gates one APK-style status write."""
     CozyLifeCoordinator = _load_coordinator()
 
     async def exercise() -> None:
         coordinator = object.__new__(CozyLifeCoordinator)
         updates: list[dict] = []
-        refreshes: list[bool] = []
+        status_writes: list[bool] = []
         entry = types.SimpleNamespace(data={"ip_address": "10.0.0.44"})
 
         def update_entry(_entry, *, data) -> None:
@@ -1002,16 +1002,17 @@ def test_powered_udp_announcement_gates_one_local_refresh_per_reply() -> None:
         async def update_ip_address(ip_address: str) -> bool:
             return ip_address == "10.0.0.45"
 
-        async def request_refresh() -> None:
-            refreshes.append(True)
+        async def send_status() -> bool:
+            status_writes.append(True)
+            return True
 
         coordinator.device.async_update_ip_address = update_ip_address
-        coordinator.async_request_refresh = request_refresh
+        coordinator.device.async_send_status = send_status
 
         await coordinator.async_handle_discovered_address("10.0.0.44")
         await coordinator.async_handle_discovered_address("10.0.0.45")
 
-        assert refreshes == [True, True]
+        assert status_writes == [True, True]
         assert updates == [{"ip_address": "10.0.0.45"}]
 
     asyncio.run(exercise())
