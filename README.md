@@ -46,8 +46,8 @@ We are still looking for reports to expand coverage for:
 ## Key Features
 
 *   ⚡ **100% Local Control**: Zero reliance on the CozyLife cloud. All control commands and sensor status requests happen locally over your Wi-Fi network.
-*   🔌 **APK-Derived Local Discovery**: Uses one shared UDP/6095 listener and the CozyLife app's `cmd:0` discovery frames to discover devices. Opening its setup flow or running an entry activates the listener; unconfigured announced devices are offered for confirmation.
-*   📍 **Static IP & Sleep Sensor Modes**: Easily provision devices individually via single static IP addresses. Includes a specialized "Sleeping temp/humidity sensor" mode that leverages cached metadata to safely pre-build battery-powered entities before the hardware wakes.
+*   🔌 **Automatic Local Discovery**: One submitted CozyLife Local entry runs a shared UDP/6095 listener using the app's `cmd:0` discovery frames every 500 ms, so short sleeping-sensor wake windows can be caught. Announced Wi-Fi devices are added automatically after local verification.
+*   📍 **Resilient Local Addressing**: Each device exposes its local IP diagnostically, and the shared listener refreshes known device addresses from APK-style announcements.
 *   🧭 **Visible Device IP Diagnostics**: Exposes each configured device's local IP address as a diagnostic sensor in Home Assistant, making router checks and troubleshooting easier.
 *   🎛️ **Multi-Gang Switch Bitmasks**: Native, low-level bitmask control on DPID 1 ensures multi-gang rockers (e.g., double or triple rocker switches) act as individual, responsive entities.
 *   🧩 **Switch Option Controls**: Exposes Power-on State, LED Status, and overcurrent protection controls only where the individual device reports the required DPIDs.
@@ -85,12 +85,9 @@ Once HACS has completed installation and Home Assistant has restarted:
 1. Navigate to `Settings` ➔ `Devices & Services`.
 2. Click `+ ADD INTEGRATION` in the bottom-right.
 3. Search for **"CozyLife Local"** and click to open the configuration flow.
-4. Set up your device:
-   * **Auto-Scan**: Leave the IP field blank, review the CIDR, and hit submit to let the integration locate devices on your subnet.
-   * **Manual Setup**: Input the static IP address of your device.
-   * **Sleeping Environment Sensor**: If manual provisioning is for a battery-powered sensor, check the "Sleeping temp/humidity sensor" box to avoid handshake timeouts.
+4. Click **Submit**. This creates the integration's one discovery controller; there are no device IP, CIDR, or sensor-profile fields.
 
-Opening the CozyLife Local setup flow activates one shared local UDP listener, and it stays active while configured entries are running. An unconfigured device that announces itself on UDP/6095 appears as a confirmation card; Home Assistant still verifies it over local TCP before adding it.
+The controller keeps one shared local UDP listener active. A supported Wi-Fi device that announces itself on UDP/6095 is verified over local TCP/5555 and added automatically.
 
 ### Sleeping Environment Sensors
 

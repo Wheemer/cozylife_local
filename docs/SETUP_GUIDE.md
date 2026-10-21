@@ -69,7 +69,7 @@ Local integration relies on sending network packets directly to your device's IP
 
 ### Step 2.3: Locating Your Device's IP Address
 
-You will need the local IP address of your device if you prefer to add it manually or verify its network connectivity.
+You may need the local IP address to verify network connectivity or a DHCP reservation. Automatic discovery does not require entering it into the integration.
 
 #### Method A: Inside the CozyLife App
 1. Open the CozyLife App and tap on your device.
@@ -91,18 +91,15 @@ Use tools like **Angry IP Scanner** (PC/Mac) or **Fing** (Mobile App) to scan **
 
 ## 3. Home Assistant Integration Setup
 
-Once your device is connected to your Wi-Fi and has a reserved IP address, you can add it to Home Assistant:
+Once your device is connected to Wi-Fi, add CozyLife Local to Home Assistant:
 
 ```
 Settings ➔ Devices & Services ➔ + Add Integration ➔ CozyLife Local
 ```
 
-### Setup Flow Fields:
-*   **IP Address (Optional)**:
-    *   *Leave empty* to scan the local subnet automatically.
-    *   *Enter a single IP* (e.g., `192.168.1.144`) to add that specific device directly.
-*   **Network CIDR (Optional)**: The default is `auto` (which scans your Home Assistant instance's default network). You can override this to scan a specific subnet (e.g., `192.168.10.0/24`).
-*   **Sleeping temp/humidity sensor (Checkbox)**: Check this box **ONLY** if the IP you entered belongs to a battery-powered environmental sensor. (See [Sleeping Battery-Powered Sensors](#sleeping-battery-powered-sensors-temphumidity) below).
+Click **Submit**. The integration creates one persistent discovery controller with no IP address, CIDR, or sensor-profile fields. It sends the APK-style UDP/6095 discovery frame every 500 ms, verifies a powered candidate through local TCP/5555, and adds supported Wi-Fi devices automatically.
+
+For a supported sleeping temperature/humidity sensor, its UDP announcement supplies the PID and local address. The integration creates its cached sensor entry directly and begins the same 500 ms known-address status probing; it does not assume a fixed wake or report schedule.
 
 After setup, the integration exposes the configured local IP address as a diagnostic sensor on the Home Assistant device page. Use that visible IP when checking DHCP reservations, router firewall rules, or direct port `5555` connectivity.
 

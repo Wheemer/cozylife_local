@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "CozyLife Local Setup",
-        "description": "Configure your CozyLife smart devices locally over Wi-Fi.\n\n• **Auto-Discovery**: Leave the **IP address** empty and submit to scan your local network.\n• **Manual Provisioning**: Enter a single **IP address** to add a specific device directly.\n• **Battery Environmental Sensors**: If adding a sleeping sensor, enter its static IP and check **Sleeping temp/humidity sensor**.",
+        "title": "CozyLife Local",
+        "description": "CozyLife Local will listen for supported Wi-Fi devices on your local network and add devices only after local verification. Click Submit to enable automatic discovery.",
         "data": {
           "ip_address": "IP Address (Leave blank to scan)",
           "network_cidr": "Network CIDR / Subnet Range",
@@ -45,7 +45,8 @@
     },
     "abort": {
       "already_configured": "This CozyLife device is already configured in Home Assistant.",
-      "invalid_discovery": "The discovered CozyLife announcement did not contain a valid device identity or IPv4 address."
+      "invalid_discovery": "The discovered CozyLife announcement did not contain a valid device identity or IPv4 address.",
+      "discovery_verification_failed": "The announced device could not be verified through its local connection."
     }
   },
   "options": {

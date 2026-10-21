@@ -8,7 +8,7 @@ from .background_discovery import (
     DATA_DISCOVERY_SERVICE,
     async_get_background_discovery,
 )
-from .const import DOMAIN, PLATFORMS
+from .const import DISCOVERY_CONTROLLER_ENTRY_TYPE, DOMAIN, PLATFORMS
 from .coordinator import CozyLifeCoordinator
 from .cozylife_api import CozyLifeDevice
 from .discovery import async_load_model_catalog
@@ -46,7 +46,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         pkg_logger.setLevel(logging.NOTSET)
 
-    await async_load_model_catalog(hass)
     discovery = hass.data[DOMAIN].get(DATA_DISCOVERY_SERVICE)
     if discovery is None or not discovery.is_running:
         try:
@@ -55,6 +54,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.warning("Unable to start shared CozyLife UDP discovery: %s", err)
             discovery = None
 
+    # This controller entry is created by the no-fields config flow. It keeps
+    # the integration loaded (and therefore its shared discovery listener)
+    # across restarts, but owns no device platforms itself.
+    if entry.data.get("entry_type") == DISCOVERY_CONTROLLER_ENTRY_TYPE:
+        return True
+
+    await async_load_model_catalog(hass)
     ip_address = entry.data["ip_address"]
 
     # Create a CozyLifeDevice instance for this entry
@@ -135,6 +141,9 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    if entry.data.get("entry_type") == DISCOVERY_CONTROLLER_ENTRY_TYPE:
+        return True
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:

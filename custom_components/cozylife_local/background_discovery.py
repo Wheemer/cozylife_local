@@ -23,7 +23,10 @@ _LOGGER = logging.getLogger(__name__)
 DATA_DISCOVERY_SERVICE = "background_udp_discovery"
 DATA_DISCOVERY_LOCK = "background_udp_discovery_lock"
 DATA_DISCOVERY_STOP_UNSUB = "background_udp_discovery_stop_unsub"
-APK_DAEMON_INTERVAL_SECONDS = 10.0
+# The APK broadcasts less often, but an environment sensor can be awake for a
+# short, variable window. Keep the shared discovery request present at the
+# same 500 ms cadence used by the known-address sensor probe.
+DISCOVERY_BROADCAST_INTERVAL_SECONDS = 0.5
 APK_NETWORK_CHANGE_BROADCAST_COUNT = 17
 CONFIG_FLOW_DISCOVERY_WINDOW_SECONDS = 5.0
 
@@ -178,9 +181,9 @@ class CozyLifeBackgroundDiscovery:
             self._scan_in_progress -= 1
 
     async def _async_broadcast_loop(self) -> None:
-        """Mirror the APK daemon's one discovery broadcast every ten seconds."""
+        """Keep one shared UDP discovery request present for sensor wake windows."""
         while True:
-            await asyncio.sleep(APK_DAEMON_INTERVAL_SECONDS)
+            await asyncio.sleep(DISCOVERY_BROADCAST_INTERVAL_SECONDS)
             self._send_broadcasts(1)
 
     def _send_broadcasts(self, count: int) -> None:

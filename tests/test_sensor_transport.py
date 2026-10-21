@@ -142,28 +142,149 @@ def _load_config_flow():
     return config_flow
 
 
-def test_opening_the_config_flow_starts_shared_udp_discovery() -> None:
-    """Discovery is available before the first config entry is created."""
+def test_config_flow_creates_a_no_fields_discovery_controller() -> None:
+    """Adding the integration creates its persistent discovery controller."""
     config_flow = _load_config_flow()
 
     async def exercise() -> None:
         flow = object.__new__(config_flow.CozyLifeConfigFlow)
         flow.hass = object()
         flow.async_show_form = lambda **kwargs: kwargs
-        starts: list[object] = []
+        unique_ids: list[str] = []
+        entries: list[dict] = []
 
-        async def start_discovery(hass) -> None:
-            starts.append(hass)
+        async def set_unique_id(unique_id: str) -> None:
+            unique_ids.append(unique_id)
 
-        with patch.object(
-            config_flow,
-            "async_get_background_discovery",
-            start_discovery,
+        flow.async_set_unique_id = set_unique_id
+        flow._abort_if_unique_id_configured = lambda: None
+        flow.async_create_entry = lambda **kwargs: entries.append(kwargs) or kwargs
+
+        form = await flow.async_step_user()
+        result = await flow.async_step_user({})
+
+        assert form["step_id"] == "user"
+        assert form["data_schema"] == {}
+        assert unique_ids == ["cozylife_local_discovery_controller"]
+        assert entries == [
+            {
+                "title": "CozyLife Local",
+                "data": {"entry_type": "discovery_controller"},
+            }
+        ]
+        assert result == entries[0]
+
+    asyncio.run(exercise())
+
+
+def test_udp_discovery_creates_supported_device_without_confirmation() -> None:
+    """A verified UDP candidate skips an extra confirmation form."""
+    config_flow = _load_config_flow()
+
+    async def exercise() -> None:
+        flow = object.__new__(config_flow.CozyLifeConfigFlow)
+        unique_ids: list[str] = []
+        calls: list[tuple[str, int, int, dict]] = []
+
+        async def set_unique_id(unique_id: str) -> None:
+            unique_ids.append(unique_id)
+
+        async def create_entry_from_ip(ip_address, min_kelvin, max_kelvin, user_input):
+            calls.append((ip_address, min_kelvin, max_kelvin, user_input))
+            return {"type": "create_entry", "title": "Kitchen plug", "data": {}}
+
+        flow.async_set_unique_id = set_unique_id
+        flow._abort_if_unique_id_configured = lambda: None
+        flow._async_create_entry_from_ip = create_entry_from_ip
+
+        result = await flow.async_step_integration_discovery(
+            {"device_id": "plug-1", "ip_address": "10.0.0.44"}
+        )
+
+        assert unique_ids == ["plug-1"]
+        assert calls == [
+            (
+                "10.0.0.44",
+                2000,
+                6500,
+                {
+                    "ip_address": "10.0.0.44",
+                    "min_kelvin": 2000,
+                    "max_kelvin": 6500,
+                },
+            )
+        ]
+        assert result["type"] == "create_entry"
+
+    asyncio.run(exercise())
+
+
+def test_udp_discovery_creates_sleeping_sensor_without_tcp_handshake() -> None:
+    """A sensor reply is enough to begin its 500 ms known-IP probing."""
+    config_flow = _load_config_flow()
+
+    async def exercise() -> None:
+        flow = object.__new__(config_flow.CozyLifeConfigFlow)
+        flow.hass = object()
+        entries: list[dict] = []
+        tcp_handshakes: list[object] = []
+
+        async def set_unique_id(_unique_id: str) -> None:
+            return None
+
+        async def load_catalog(_hass) -> None:
+            return None
+
+        async def tcp_handshake(*_args) -> dict:
+            tcp_handshakes.append(True)
+            return {"type": "create_entry"}
+
+        flow.async_set_unique_id = set_unique_id
+        flow._abort_if_unique_id_configured = lambda: None
+        flow.async_create_entry = lambda **kwargs: entries.append(kwargs) or kwargs
+        flow._async_create_entry_from_ip = tcp_handshake
+        model = types.SimpleNamespace(
+            model_name="CozyLife Temp/Humidity",
+            type_code="03",
+            dpids=frozenset({"4", "8", "9"}),
+        )
+        classification = types.SimpleNamespace(
+            is_environment_sensor=True,
+            is_local_transport=True,
+        )
+
+        with (
+            patch.object(config_flow, "async_load_model_catalog", load_catalog),
+            patch.object(config_flow, "get_model_info", lambda _pid: model),
+            patch.object(
+                config_flow,
+                "classify_device",
+                lambda *_args: classification,
+            ),
         ):
-            result = await flow.async_step_user()
+            result = await flow.async_step_integration_discovery(
+                {
+                    "device_id": "sensor-1",
+                    "ip_address": "10.0.0.115",
+                    "pid": "Z4tRml",
+                    "device_type_code": "03",
+                }
+            )
 
-        assert starts == [flow.hass]
-        assert result["step_id"] == "user"
+        assert tcp_handshakes == []
+        assert entries == [
+            {
+                "title": "CozyLife Temp/Humidity",
+                "data": {
+                    "ip_address": "10.0.0.115",
+                    "device_id": "sensor-1",
+                    "pid": "Z4tRml",
+                    "device_type_code": "03",
+                    "dpids": ["4", "8", "9"],
+                },
+            }
+        ]
+        assert result == entries[0]
 
     asyncio.run(exercise())
 
@@ -306,6 +427,7 @@ def test_status_send_reconnects_after_the_peer_closes() -> None:
 def test_shared_udp_discovery_uses_the_apk_burst_on_one_receive_socket() -> None:
     """The one shared listener preserves the APK's 17 request UDP session."""
     background_discovery = _load_background_discovery()
+    assert background_discovery.DISCOVERY_BROADCAST_INTERVAL_SECONDS == 0.5
 
     class FakeTransport:
         def __init__(self) -> None:

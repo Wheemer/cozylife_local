@@ -9,8 +9,8 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
-from .background_discovery import async_get_background_discovery
 from .const import (
+    DISCOVERY_CONTROLLER_ENTRY_TYPE,
     DOMAIN,
     DEFAULT_MAX_KELVIN,
     DEFAULT_MIN_KELVIN,
@@ -78,81 +78,22 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Handle the initial step."""
-        errors: Dict[str, str] = {}
-
+        """Create the one persistent, no-fields discovery controller entry."""
         if user_input is None:
-            # A custom integration has no manifest trigger for this vendor's
-            # UDP protocol before its first config entry exists. Starting the
-            # listener as soon as its config flow opens gives an unconfigured
-            # device the same shared APK-style discovery path without making
-            # the form depend on a socket being available.
-            try:
-                await async_get_background_discovery(self.hass)
-            except OSError as err:
-                _LOGGER.debug("CozyLife UDP discovery is unavailable: %s", err)
+            return self.async_show_form(step_id="user", data_schema=vol.Schema({}))
 
-        if user_input is not None:
-            ip_address = user_input.get("ip_address", "").strip()
-            network_cidr = user_input.get("network_cidr", AUTO_NETWORK)
-            sleeping_sensor = user_input.get("sleeping_sensor", False)
-
-            if not ip_address:
-                if sleeping_sensor:
-                    errors["base"] = "ip_required_for_sleeping_sensor"
-                    return self.async_show_form(
-                        step_id="user",
-                        data_schema=DATA_SCHEMA,
-                        errors=errors,
-                    )
-                return await self._async_discover_devices(network_cidr)
-
-            try:
-                ipaddress.ip_address(ip_address)
-            except ValueError:
-                errors["ip_address"] = "invalid_ip"
-                return self.async_show_form(
-                    step_id="user",
-                    data_schema=DATA_SCHEMA,
-                    errors=errors,
-                )
-
-            if self._is_device_configured(ip_address):
-                return self.async_abort(reason="already_configured")
-
-            if sleeping_sensor:
-                await async_load_model_catalog(self.hass)
-                if "sensor_pid" not in user_input:
-                    return self.async_show_form(
-                        step_id="user",
-                        data_schema=_sleeping_sensor_schema(ip_address),
-                        errors={},
-                    )
-                return await self._async_create_sleeping_sensor_entry(
-                    ip_address,
-                    user_input,
-                )
-
-            return await self._async_create_entry_from_ip(
-                ip_address,
-                user_input.get("min_kelvin", DEFAULT_MIN_KELVIN),
-                user_input.get("max_kelvin", DEFAULT_MAX_KELVIN),
-                user_input,
-            )
-
-        return self.async_show_form(
-            step_id="user", data_schema=DATA_SCHEMA, errors=errors
+        await self.async_set_unique_id(f"{DOMAIN}_discovery_controller")
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(
+            title="CozyLife Local",
+            data={"entry_type": DISCOVERY_CONTROLLER_ENTRY_TYPE},
         )
 
     async def async_step_integration_discovery(
         self,
         discovery_info: Dict[str, Any],
     ) -> FlowResult:
-        """Offer an APK-announced device that is not configured yet.
-
-        UDP only identifies a candidate. Confirmation still performs the
-        device's normal local TCP/5555 handshake before an entry is created.
-        """
+        """Verify and add an APK-announced Wi-Fi device without a user form."""
         device_id = discovery_info.get("device_id")
         ip_address = discovery_info.get("ip_address")
         if not isinstance(device_id, str) or not isinstance(ip_address, str):
@@ -165,8 +106,55 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         await self.async_set_unique_id(device_id)
         self._abort_if_unique_id_configured()
-        self._udp_discovery_info = discovery_info
-        return await self.async_step_confirm_discovery()
+
+        # A temperature/humidity sensor can return its UDP identity during a
+        # brief wake window and go back to sleep before a TCP device-info
+        # handshake can finish. Its advertised PID plus the APK model catalog
+        # are sufficient to create its local entities; setup then starts the
+        # regular 500 ms known-address status probing.
+        pid = discovery_info.get("pid")
+        if isinstance(pid, str) and pid:
+            await async_load_model_catalog(self.hass)
+            model = get_model_info(pid)
+            device_type_code = discovery_info.get("device_type_code")
+            if model is not None:
+                classification = classify_device(
+                    pid,
+                    device_type_code or model.type_code,
+                    model.dpids,
+                )
+                if (
+                    classification.is_environment_sensor
+                    and classification.is_local_transport
+                ):
+                    return self.async_create_entry(
+                        title=model.model_name or "CozyLife Temp/Humidity",
+                        data={
+                            "ip_address": ip_address,
+                            "device_id": device_id,
+                            "pid": pid,
+                            "device_type_code": (
+                                device_type_code or model.type_code
+                            ),
+                            "dpids": sorted(model.dpids),
+                        },
+                    )
+
+        result = await self._async_create_entry_from_ip(
+            ip_address,
+            DEFAULT_MIN_KELVIN,
+            DEFAULT_MAX_KELVIN,
+            {
+                "ip_address": ip_address,
+                # Use model defaults instead of opening a Kelvin form for an
+                # automatically discovered light.
+                "min_kelvin": DEFAULT_MIN_KELVIN,
+                "max_kelvin": DEFAULT_MAX_KELVIN,
+            },
+        )
+        if result["type"] == "create_entry":
+            return result
+        return self.async_abort(reason="discovery_verification_failed")
 
     async def async_step_confirm_discovery(
         self,
