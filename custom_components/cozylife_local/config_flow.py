@@ -1,5 +1,4 @@
 import logging
-import asyncio
 import ipaddress
 from typing import Any, Dict, Optional
 
@@ -16,11 +15,11 @@ from .const import (
     DEFAULT_MIN_KELVIN,
     LIGHT_KELVIN_RANGES,
 )
-from .cozylife_api import CozyLifeDevice
 from .discovery import (
     async_load_model_catalog,
     classify_device,
     get_model_info,
+    supports_local_entities,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,11 +93,11 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         ip_address = discovery_info["ip_address"]
         device_id = discovery_info["device_id"]
 
-        # A temperature/humidity sensor can return its UDP identity during a
-        # brief wake window and go back to sleep before a TCP device-info
-        # handshake can finish. Its advertised PID plus the APK model catalog
-        # are sufficient to create its local entities; setup then starts the
-        # regular 500 ms known-address status probing.
+        # The APK treats an announced DID/IP pair as the local identity. It
+        # associates that identity with its catalogue profile, then refreshes
+        # it asynchronously with cmd 2 / attr:[1]; it does not make a cmd 0
+        # inventory reply a prerequisite to adding the device. Mirror that for
+        # known Wi-Fi models for which this integration implements entities.
         pid = discovery_info.get("pid")
         if isinstance(pid, str) and pid:
             await async_load_model_catalog(self.hass)
@@ -110,12 +109,16 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     device_type_code or model.type_code,
                     model.dpids,
                 )
-                if (
-                    classification.is_environment_sensor
-                    and classification.is_local_transport
+                if classification.is_local_transport and supports_local_entities(
+                    pid, classification
                 ):
+                    min_kelvin, max_kelvin = (
+                        _kelvin_range_for_pid(pid)
+                        if classification.is_light
+                        else (DEFAULT_MIN_KELVIN, DEFAULT_MAX_KELVIN)
+                    )
                     return self.async_create_entry(
-                        title=model.model_name or "CozyLife Temp/Humidity",
+                        title=model.model_name or "CozyLife device",
                         data={
                             "ip_address": ip_address,
                             "device_id": device_id,
@@ -124,13 +127,13 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 device_type_code or model.type_code
                             ),
                             "dpids": sorted(model.dpids),
+                            "min_kelvin": min_kelvin,
+                            "max_kelvin": max_kelvin,
+                            "announced_via_udp": True,
                         },
                     )
 
-        result = await self._async_create_entry_from_ip(ip_address)
-        if result["type"] == "create_entry":
-            return result
-        return self.async_abort(reason="discovery_verification_failed")
+        return self.async_abort(reason="unsupported_announced_model")
 
     async def async_step_confirm_discovery(
         self,
@@ -164,50 +167,6 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
         return CozyLifeOptionsFlow(config_entry)
-
-    async def _async_create_entry_from_ip(
-        self,
-        ip_address: str,
-    ) -> FlowResult:
-        """Verify a powered device from its discovered local address."""
-        try:
-            await async_load_model_catalog(self.hass)
-            device = CozyLifeDevice(ip_address)
-            if not await device.async_update_device_info():
-                return self.async_abort(reason="discovery_verification_failed")
-
-            await self.async_set_unique_id(device.device_id)
-            self._abort_if_unique_id_configured()
-
-            dpids = device.dpid or []
-            classification = classify_device(device.pid, device.device_type_code, dpids)
-            if not classification.is_local_transport:
-                return self.async_abort(reason="discovery_verification_failed")
-            if classification.is_light:
-                min_kelvin, max_kelvin = _kelvin_range_for_pid(device.pid)
-            else:
-                min_kelvin, max_kelvin = DEFAULT_MIN_KELVIN, DEFAULT_MAX_KELVIN
-
-            return self.async_create_entry(
-                title=device.device_model_name or ip_address,
-                data={
-                    "ip_address": ip_address,
-                    "device_id": device.device_id,
-                    "pid": device.pid,
-                    "device_type_code": device.device_type_code,
-                    "dpids": dpids,
-                    "min_kelvin": min_kelvin,
-                    "max_kelvin": max_kelvin,
-                },
-            )
-        except asyncio.TimeoutError:
-            pass
-        except ConnectionRefusedError:
-            pass
-        except Exception:
-            _LOGGER.exception("Unexpected error during CozyLife device setup")
-
-        return self.async_abort(reason="discovery_verification_failed")
 
 class CozyLifeOptionsFlow(config_entries.OptionsFlow):
     """Handle CozyLife options."""

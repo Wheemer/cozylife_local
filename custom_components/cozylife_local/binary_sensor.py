@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import CozyLifeCoordinator
+from .discovery import LOCAL_BINARY_SENSOR_PIDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,22 +26,8 @@ class BinarySensorDescription:
     device_class: BinarySensorDeviceClass
 
 
-_WIFI_CONTACT_SENSOR_PIDS = frozenset(
-    {
-        # APK catalog, Sensor / Wi-Fi (net 02): Door Sensor and Door Magnet.
-        "kOTYxo",
-        "0iDvw9",
-        "mBRflp",
-        "GnOqhr",
-        "t7x7Uz",
-    }
-)
-_WIFI_WATER_SENSOR_PIDS = frozenset(
-    {
-        # APK catalog, Sensor / Wi-Fi (net 02): Water Leak Sensor.
-        "y9DaDw",
-    }
-)
+_WIFI_CONTACT_SENSOR_PIDS = LOCAL_BINARY_SENSOR_PIDS - {"y9DaDw"}
+_WIFI_WATER_SENSOR_PIDS = frozenset({"y9DaDw"})
 
 
 def _binary_sensor_descriptions(

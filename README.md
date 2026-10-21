@@ -87,7 +87,7 @@ Once HACS has completed installation and Home Assistant has restarted:
 3. Search for **"CozyLife Local"** and click to open the configuration flow.
 4. Click **Submit**. This creates the integration's one discovery controller; there are no device IP, CIDR, or sensor-profile fields.
 
-The controller keeps one shared local UDP listener active. A supported Wi-Fi device that announces itself on UDP/6095 appears in Home Assistant's normal discovered-device card. Click **Add** to create its entry. Powered devices are verified over local TCP/5555 when added; a supported sleeping sensor is added from the UDP identity already captured, so clicking **Add** does not require it to wake a second time.
+The controller keeps one shared local UDP listener active. A supported Wi-Fi device that announces itself on UDP/6095 appears in Home Assistant's normal discovered-device card. Click **Add** to create its entry from the captured DID, PID, and IP plus the APK model catalogue DPID profile. Adding the entry does not require a synchronous TCP inventory reply; later local state and control use TCP/5555.
 
 ### Sleeping Environment Sensors
 

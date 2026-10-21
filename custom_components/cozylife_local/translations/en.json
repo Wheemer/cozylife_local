@@ -13,7 +13,7 @@
     "abort": {
       "already_configured": "This CozyLife device is already configured in Home Assistant.",
       "invalid_discovery": "The discovered CozyLife announcement did not contain a valid device identity or IPv4 address.",
-      "discovery_verification_failed": "The announced device could not be verified through its local connection."
+      "unsupported_announced_model": "The announced device is not an APK-catalogued Wi-Fi product with entities supported by this integration."
     }
   },
   "options": {
@@ -27,7 +27,7 @@
           "min_kelvin": "Minimum Kelvin (Warm White)"
         },
         "data_description": {
-          "enable_debug": "Streams complete local packet handshakes to Home Assistant logs. Extremely helpful for troubleshooting unrecognized device models.",
+          "enable_debug": "Streams complete local packet handshakes to Home Assistant logs. Helpful for diagnosing local transport or entity-mapping problems.",
           "min_kelvin": "Adjust the warmest color temperature limit (Kelvin) for this light bulb.",
           "max_kelvin": "Adjust the coolest color temperature limit (Kelvin) for this light bulb."
         }

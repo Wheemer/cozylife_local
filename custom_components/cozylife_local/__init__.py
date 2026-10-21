@@ -160,8 +160,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
     hass.async_create_task(coordinator.async_start_discovery())
 
-    if coordinator.is_sensor:
-        # Do not block setup while the sensor is unavailable.  The coordinator
+    if coordinator.is_sensor or entry.data.get("announced_via_udp", False):
+        # Do not block setup for a UDP-announced device. The APK accepts the
+        # announcement identity first and reads state asynchronously; a local
+        # reply is not a prerequisite for adding it. The coordinator refreshes
+        # it on its normal interval after setup.
+        #
+        # A sleeping sensor also begins unavailable. The coordinator
         # keeps the configured local address available for wake-window probes;
         # UDP discovery independently refreshes that address when a matching
         # reply arrives.
