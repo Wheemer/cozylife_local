@@ -371,6 +371,7 @@ def test_shared_udp_listener_routes_a_known_did_without_a_second_socket() -> Non
         service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
         service._devices = {}
         service._entry_callbacks = {"plug-1": handle_address}
+        service._address_callbacks = {}
         service._scan_in_progress = 0
         service.hass = types.SimpleNamespace(async_create_task=asyncio.create_task)
 
@@ -500,6 +501,7 @@ def test_shared_udp_listener_uses_home_assistant_discovery_flow_helper() -> None
     service.hass = hass
     service._devices = {}
     service._entry_callbacks = {}
+    service._address_callbacks = {}
     service._scan_in_progress = 0
 
     def create_flow(flow_hass, domain, *, context, data) -> None:
@@ -542,6 +544,7 @@ def test_manual_scan_reuses_listener_and_defers_automatic_flow() -> None:
         service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
         service._devices = {}
         service._entry_callbacks = {}
+        service._address_callbacks = {}
         service._scan_in_progress = 0
         flow_calls: list[object] = []
         send_count = 0
@@ -661,42 +664,46 @@ def test_udp_discovery_shutdown_cancels_its_task_and_closes_the_socket() -> None
     asyncio.run(exercise())
 
 
-def test_udp_announcement_for_provisional_sensor_does_not_make_a_second_card() -> None:
-    """An announced DID belongs to a manual sleeping-sensor entry by its IP."""
+def test_udp_announcement_routes_to_provisional_sensor_address() -> None:
+    """A sleeping sensor's reply wakes its entry without making another card."""
     background_discovery = _load_background_discovery()
-    flow_calls: list[object] = []
-    entry = types.SimpleNamespace(
-        data={
-            "device_id": "sleeping_sensor_Z4tRml_10.0.0.115",
-            "ip_address": "10.0.0.115",
-        },
-        unique_id="sleeping_sensor_Z4tRml_10.0.0.115",
-    )
-    hass = types.SimpleNamespace(
-        config_entries=types.SimpleNamespace(async_entries=lambda _domain: [entry])
-    )
-    service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
-    service.hass = hass
-    service._devices = {}
-    service._entry_callbacks = {}
-    service._scan_in_progress = 0
+    async def exercise() -> None:
+        received: list[str] = []
+        flow_calls: list[object] = []
 
-    with patch.object(
-        background_discovery.discovery_flow,
-        "async_create_flow",
-        lambda *_args, **_kwargs: flow_calls.append(True),
-    ):
-        service._handle_device(
-            background_discovery.UdpDiscoveredDevice(
-                device_id="verified-sensor-did",
-                ip_address="10.0.0.115",
-                pid="Z4tRml",
-                device_type_code="03",
-            )
+        async def handle_address(ip_address: str) -> None:
+            received.append(ip_address)
+
+        service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
+        service.hass = types.SimpleNamespace(
+            async_create_task=asyncio.create_task,
+            config_entries=types.SimpleNamespace(async_entries=lambda _domain: []),
         )
+        service._devices = {}
+        service._entry_callbacks = {}
+        service._address_callbacks = {"10.0.0.115": handle_address}
+        service._scan_in_progress = 0
 
-    assert flow_calls == []
-    assert service._devices["verified-sensor-did"][0].ip_address == "10.0.0.115"
+        with patch.object(
+            background_discovery.discovery_flow,
+            "async_create_flow",
+            lambda *_args, **_kwargs: flow_calls.append(True),
+        ):
+            service._handle_device(
+                background_discovery.UdpDiscoveredDevice(
+                    device_id="verified-sensor-did",
+                    ip_address="10.0.0.115",
+                    pid="Z4tRml",
+                    device_type_code="03",
+                )
+            )
+
+        await asyncio.sleep(0)
+        assert received == ["10.0.0.115"]
+        assert flow_calls == []
+        assert service._devices["verified-sensor-did"][0].ip_address == "10.0.0.115"
+
+    asyncio.run(exercise())
 
 
 def test_persistent_transport_preserves_existing_info_state_and_set_commands() -> None:
@@ -863,6 +870,7 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
         entry = types.SimpleNamespace(
             data={
                 "device_id": "sleeping_sensor_Z4tRml_10.0.0.115",
+                "ip_address": "10.0.0.115",
                 "pid": "Z4tRml",
                 "device_type_code": "03",
                 "dpids": ["4", "8", "9"],
@@ -891,9 +899,11 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
 
         coordinator.device.async_update_device_info = update_device_info
         unregistered: list[str] = []
+        unregistered_addresses: list[str] = []
         registered: list[tuple[str, object]] = []
         discovery = types.SimpleNamespace(
             unregister_device=unregistered.append,
+            unregister_address=unregistered_addresses.append,
             register_device=lambda device_id, callback: registered.append(
                 (device_id, callback)
             ),
@@ -910,12 +920,14 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
         assert updates == [
             {
                 "device_id": "76608860c4d7fdd94485",
+                "ip_address": "10.0.0.115",
                 "pid": "Z4tRml",
                 "device_type_code": "02",
                 "dpids": ["4", "8", "9", "14"],
             }
         ]
         assert unregistered == ["sleeping_sensor_Z4tRml_10.0.0.115"]
+        assert unregistered_addresses == ["10.0.0.115"]
         assert registered == [
             ("76608860c4d7fdd94485", coordinator.async_handle_discovered_address)
         ]

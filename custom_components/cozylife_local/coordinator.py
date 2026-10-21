@@ -185,6 +185,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return
 
             old_device_id = self._entry.data.get("device_id")
+            old_ip_address = self._entry.data.get("ip_address")
             data = {
                 **self._entry.data,
                 "device_id": device_id,
@@ -197,6 +198,8 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             discovery = await async_get_background_discovery(self.hass)
             if old_device_id:
                 discovery.unregister_device(old_device_id)
+            if old_ip_address:
+                discovery.unregister_address(old_ip_address)
             discovery.register_device(device_id, self.async_handle_discovered_address)
             _LOGGER.info(
                 "Verified local device ID for sleeping CozyLife sensor at %s",

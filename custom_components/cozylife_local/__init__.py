@@ -97,6 +97,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             device.device_id,
             coordinator.async_handle_discovered_address,
         )
+        if coordinator.is_sensor and device.device_id.startswith("sleeping_sensor_"):
+            # Manual sleeping-sensor setup begins with an entry-local ID. A
+            # UDP reply can still prove this configured address is reachable;
+            # use it to request status, while TCP remains responsible for
+            # promoting the real device ID.
+            discovery.register_address(
+                ip_address,
+                coordinator.async_handle_discovered_address,
+            )
     hass.async_create_task(coordinator.async_start_discovery())
 
     if coordinator.is_sensor:
@@ -133,6 +142,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         service = hass.data[DOMAIN].get(DATA_DISCOVERY_SERVICE)
         if service is not None and coordinator.device.device_id:
             service.unregister_device(coordinator.device.device_id)
+            service.unregister_address(entry.data.get("ip_address", ""))
         await coordinator.async_close()
 
     return unload_ok

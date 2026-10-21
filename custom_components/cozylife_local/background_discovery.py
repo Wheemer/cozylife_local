@@ -82,6 +82,7 @@ class CozyLifeBackgroundDiscovery:
         self._broadcast_task: asyncio.Task[None] | None = None
         self._devices: dict[str, tuple[UdpDiscoveredDevice, float]] = {}
         self._entry_callbacks: dict[str, Callable[[str], Awaitable[None]]] = {}
+        self._address_callbacks: dict[str, Callable[[str], Awaitable[None]]] = {}
         self._scan_in_progress = 0
 
     async def async_start(self) -> None:
@@ -141,6 +142,18 @@ class CozyLifeBackgroundDiscovery:
         """Stop routing replies to an unloaded config entry."""
         self._entry_callbacks.pop(device_id, None)
 
+    def register_address(
+        self,
+        ip_address: str,
+        callback: Callable[[str], Awaitable[None]],
+    ) -> None:
+        """Route a provisional sleeping sensor's verified address reply."""
+        self._address_callbacks[ip_address] = callback
+
+    def unregister_address(self, ip_address: str) -> None:
+        """Stop routing replies by a provisional sensor address."""
+        self._address_callbacks.pop(ip_address, None)
+
     async def async_scan(self) -> list[UdpDiscoveredDevice]:
         """Use the shared socket for an interactive config-flow scan."""
         scan_started = time.monotonic()
@@ -186,6 +199,8 @@ class CozyLifeBackgroundDiscovery:
         """Cache an APK reply, refresh known entries, or start one discovery flow."""
         self._devices[device.device_id] = (device, time.monotonic())
         callback = self._entry_callbacks.get(device.device_id)
+        if callback is None:
+            callback = self._address_callbacks.get(device.ip_address)
         if callback is not None:
             self.hass.async_create_task(callback(device.ip_address))
             return
