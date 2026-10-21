@@ -148,10 +148,9 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data={**self._entry.data, "ip_address": ip_address},
             )
         if self._uses_sensor_polling:
-            # A matching discovery reply verifies or refreshes the address.
-            # Send a status frame immediately; the socket reader publishes any
-            # resulting asynchronous device report.
-            await self.device.async_send_status()
+            # Shared UDP discovery may announce a device every 500 ms. It
+            # updates the address only: the wake-window loop is the sole
+            # owner of sleeping-sensor status writes.
             return
         # The UDP announcement is an identity/address update, not a state
         # response. The APK does not refresh state for an unchanged address.
