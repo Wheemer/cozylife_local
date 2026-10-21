@@ -177,50 +177,46 @@ def test_config_flow_creates_a_no_fields_discovery_controller() -> None:
     asyncio.run(exercise())
 
 
-def test_udp_discovery_creates_supported_device_without_confirmation() -> None:
-    """A verified UDP candidate skips an extra confirmation form."""
+def test_udp_discovery_shows_normal_confirmation_before_adding() -> None:
+    """A UDP candidate follows Home Assistant's ordinary Add-device flow."""
     config_flow = _load_config_flow()
 
     async def exercise() -> None:
         flow = object.__new__(config_flow.CozyLifeConfigFlow)
         unique_ids: list[str] = []
-        calls: list[tuple[str, int, int, dict]] = []
+        forms: list[dict] = []
 
         async def set_unique_id(unique_id: str) -> None:
             unique_ids.append(unique_id)
 
-        async def create_entry_from_ip(ip_address, min_kelvin, max_kelvin, user_input):
-            calls.append((ip_address, min_kelvin, max_kelvin, user_input))
-            return {"type": "create_entry", "title": "Kitchen plug", "data": {}}
-
         flow.async_set_unique_id = set_unique_id
         flow._abort_if_unique_id_configured = lambda: None
-        flow._async_create_entry_from_ip = create_entry_from_ip
+        flow.hass = object()
+        flow.async_show_form = lambda **kwargs: forms.append(kwargs) or kwargs
 
-        result = await flow.async_step_integration_discovery(
-            {"device_id": "plug-1", "ip_address": "10.0.0.44"}
-        )
+        async def load_catalog(_hass) -> None:
+            return None
+
+        with (
+            patch.object(config_flow, "async_load_model_catalog", load_catalog),
+            patch.object(config_flow, "get_model_info", lambda _pid: None),
+        ):
+            result = await flow.async_step_integration_discovery(
+                {"device_id": "plug-1", "ip_address": "10.0.0.44"}
+            )
 
         assert unique_ids == ["plug-1"]
-        assert calls == [
-            (
-                "10.0.0.44",
-                2000,
-                6500,
-                {
-                    "ip_address": "10.0.0.44",
-                    "min_kelvin": 2000,
-                    "max_kelvin": 6500,
-                },
-            )
-        ]
-        assert result["type"] == "create_entry"
+        assert flow._udp_discovery_info == {
+            "device_id": "plug-1", "ip_address": "10.0.0.44"
+        }
+        assert result["step_id"] == "confirm_discovery"
+        assert forms == [result]
 
     asyncio.run(exercise())
 
 
-def test_udp_discovery_creates_sleeping_sensor_without_tcp_handshake() -> None:
-    """A sensor reply is enough to begin its 500 ms known-IP probing."""
+def test_confirmed_udp_sleeping_sensor_needs_no_tcp_handshake() -> None:
+    """A confirmed sensor reply is enough to begin known-IP probing."""
     config_flow = _load_config_flow()
 
     async def exercise() -> None:
@@ -262,12 +258,10 @@ def test_udp_discovery_creates_sleeping_sensor_without_tcp_handshake() -> None:
                 lambda *_args: classification,
             ),
         ):
-            result = await flow.async_step_integration_discovery(
+            result = await flow._async_create_discovered_entry(
                 {
-                    "device_id": "sensor-1",
-                    "ip_address": "10.0.0.115",
-                    "pid": "Z4tRml",
-                    "device_type_code": "03",
+                    "device_id": "sensor-1", "ip_address": "10.0.0.115",
+                    "pid": "Z4tRml", "device_type_code": "03",
                 }
             )
 

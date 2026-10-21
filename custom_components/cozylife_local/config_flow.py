@@ -93,7 +93,7 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self,
         discovery_info: Dict[str, Any],
     ) -> FlowResult:
-        """Verify and add an APK-announced Wi-Fi device without a user form."""
+        """Present an APK-announced Wi-Fi device for normal HA confirmation."""
         device_id = discovery_info.get("device_id")
         ip_address = discovery_info.get("ip_address")
         if not isinstance(device_id, str) or not isinstance(ip_address, str):
@@ -106,6 +106,19 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         await self.async_set_unique_id(device_id)
         self._abort_if_unique_id_configured()
+        # Keep the UDP identity on this config-flow instance.  A sleeping
+        # sensor may return to sleep before the user presses Add, so the
+        # confirmation step must not depend on a second TCP handshake.
+        self._udp_discovery_info = dict(discovery_info)
+        return await self.async_step_confirm_discovery()
+
+    async def _async_create_discovered_entry(
+        self,
+        discovery_info: Dict[str, Any],
+    ) -> FlowResult:
+        """Create a confirmed entry from its saved UDP announcement."""
+        ip_address = discovery_info["ip_address"]
+        device_id = discovery_info["device_id"]
 
         # A temperature/humidity sensor can return its UDP identity during a
         # brief wake window and go back to sleep before a TCP device-info
@@ -160,19 +173,13 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self,
         user_input: Optional[Dict[str, Any]] = None,
     ) -> FlowResult:
-        """Confirm adding a device discovered by the shared UDP listener."""
+        """Let Home Assistant's standard discovery card confirm a device."""
         discovery_info = getattr(self, "_udp_discovery_info", None)
         if not isinstance(discovery_info, dict):
             return self.async_abort(reason="invalid_discovery")
 
-        ip_address = discovery_info["ip_address"]
         if user_input is not None:
-            return await self._async_create_entry_from_ip(
-                ip_address,
-                DEFAULT_MIN_KELVIN,
-                DEFAULT_MAX_KELVIN,
-                {"ip_address": ip_address},
-            )
+            return await self._async_create_discovered_entry(discovery_info)
 
         await async_load_model_catalog(self.hass)
         model = get_model_info(discovery_info.get("pid"))
@@ -185,7 +192,7 @@ class CozyLifeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="confirm_discovery",
             description_placeholders={
                 "device": device_name,
-                "ip_address": ip_address,
+                "ip_address": discovery_info["ip_address"],
             },
         )
 

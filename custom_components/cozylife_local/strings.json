@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "CozyLife Local",
-        "description": "CozyLife Local will listen for supported Wi-Fi devices on your local network and add devices only after local verification. Click Submit to enable automatic discovery.",
+        "description": "Click Submit once to enable local discovery. Newly announced devices appear through Home Assistant's normal discovered-device card, where you choose whether to add them.",
         "data": {
           "ip_address": "IP Address (Leave blank to scan)",
           "network_cidr": "Network CIDR / Subnet Range",
@@ -28,7 +28,7 @@
       },
       "confirm_discovery": {
         "title": "CozyLife device found",
-        "description": "A local CozyLife UDP announcement found **{device}** at **{ip_address}**. Confirm to verify it through its local connection and add it."
+        "description": "A local CozyLife UDP announcement found **{device}** at **{ip_address}**. Confirm to add it. For a supported sleeping sensor, this uses the identity already captured from its announcement."
       }
     },
     "error": {
