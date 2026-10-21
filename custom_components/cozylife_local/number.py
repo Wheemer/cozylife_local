@@ -47,6 +47,7 @@ class CozyLifeCountdownNumberBase(
 ):
     """Countdown/timer control for CozyLife devices."""
 
+    _attr_has_entity_name = True
     _attr_icon = "mdi:timer-outline"
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = 0
@@ -68,7 +69,7 @@ class CozyLifeCountdownNumberBase(
         super().__init__(coordinator)
         self._countdown_dpid = dpid
         self._device_kind = device_kind
-        self._attr_name = f"{coordinator.device.device_model_name} Countdown"
+        self._attr_name = "Countdown"
         self._attr_unique_id = f"{coordinator.device.device_id}_{unique_suffix}"
 
     @property

@@ -7,7 +7,7 @@ An extremely fast, **100% local** Home Assistant integration for CozyLife-compat
 ### Key Features
 
 *   🔒 **100% Local Control**: All commands are sent directly to devices on your local network. No internet connection, API keys, or cloud accounts required.
-*   🔎 **Subnet Auto-Discovery**: Instantly scan your local network to discover CozyLife devices during initial setup.
+*   🔎 **APK-Derived Local Discovery**: A shared UDP/6095 listener uses the CozyLife app's discovery frames for setup scans and offers unconfigured announced devices for confirmation.
 *   ⚡ **Low-Latency Switching**: Instant physical updates with automated bitmask handling for multi-gang switches (e.g. double or triple rocker wall switches).
 *   📈 **High-Fidelity Power Monitoring**: Automatically exposes real-time Voltage, Current, Power, and Cumulative Energy (kWh) sensors on metered smart plugs.
 *   💡 **Smart Lighting Enhancements**: Smooth color transitions, custom color-temperature Kelvin ranges, and color state safeguards to prevent hardware glitches.

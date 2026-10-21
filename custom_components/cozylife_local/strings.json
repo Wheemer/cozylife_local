@@ -2,45 +2,18 @@
   "config": {
     "step": {
       "user": {
-        "title": "CozyLife Local Setup",
-        "description": "Configure your CozyLife smart devices locally over Wi-Fi.\n\n• **Auto-Discovery**: Leave the **IP address** empty and submit to scan your local network.\n• **Manual Provisioning**: Enter a single **IP address** to add a specific device directly.\n• **Battery Environmental Sensors**: If adding a sleeping sensor, enter its static IP and check **Sleeping temp/humidity sensor**.",
-        "data": {
-          "ip_address": "IP Address (Leave blank to scan)",
-          "network_cidr": "Network CIDR / Subnet Range",
-          "sleeping_sensor": "Sleeping temp/humidity sensor",
-          "min_kelvin": "Minimum Kelvin (Warm White)",
-          "max_kelvin": "Maximum Kelvin (Cool White)"
-        },
-        "data_description": {
-          "ip_address": "Static IP address of your device (e.g. 192.168.1.150). Recommended to set a DHCP reservation in your router.",
-          "network_cidr": "Subnet to scan during discovery. Use 'auto' to scan the default local network interface or a CIDR range (e.g. 192.168.1.0/24).",
-          "sleeping_sensor": "Check this ONLY for battery-powered sensors. Caches metadata so Home Assistant builds entities without waiting for the sleeping hardware to wake up.",
-          "min_kelvin": "The warmest light color temperature supported by your bulb hardware (typical range: 2000K to 2700K).",
-          "max_kelvin": "The coolest light color temperature supported by your bulb hardware (typical range: 5000K to 6500K)."
-        }
+        "title": "CozyLife Local",
+        "description": "Click Submit once to enable local discovery. Newly announced devices appear through Home Assistant's normal discovered-device card, where you choose whether to add them."
       },
-      "select_device": {
-        "title": "Discovered Devices",
-        "description": "Discovered **{count}** CozyLife local device(s) on your subnet. Select the device you want to add to Home Assistant below.",
-        "data": {
-          "device": "Select Device"
-        }
+      "confirm_discovery": {
+        "title": "CozyLife device found",
+        "description": "A local CozyLife UDP announcement found **{device}** at **{ip_address}**. Confirm to add it. For a supported sleeping sensor, this uses the identity already captured from its announcement."
       }
     },
-    "error": {
-      "cannot_connect": "Unable to establish a local connection with the device on port 5555. Verify the IP address, check power, and ensure no firewalls or AP isolation settings are blocking the port.",
-      "invalid_ip": "Please enter a valid IPv4 address (e.g., 192.168.1.50).",
-      "invalid_network": "Please enter a valid IPv4 network CIDR (e.g. 192.168.1.0/24) or use the keyword 'auto'.",
-      "ip_required_for_sleeping_sensor": "A single, static IP address is required when manually provisioning a sleeping battery sensor.",
-      "network_too_large": "The specified subnet range is too large to scan. Please restrict your scan to a /24 network (256 hosts) or smaller.",
-      "no_devices_found": "No online CozyLife devices were detected on the network. Check your device's power, Wi-Fi connection, and ensure it is on the same subnet as Home Assistant.",
-      "no_network": "Home Assistant could not automatically detect an active local network interface. Please specify a CIDR range manually.",
-      "timeout_connect": "The connection attempt to the device timed out. Check network response times or router settings.",
-      "unsupported_transport": "This model is catalogued as Bluetooth or Zigbee, not a Wi-Fi local-TCP device. CozyLife Local cannot communicate with it.",
-      "unknown": "An unexpected system error occurred during device handshake. Please check your Home Assistant system logs."
-    },
     "abort": {
-      "already_configured": "This CozyLife device is already configured in Home Assistant."
+      "already_configured": "This CozyLife device is already configured in Home Assistant.",
+      "invalid_discovery": "The discovered CozyLife announcement did not contain a valid device identity or IPv4 address.",
+      "discovery_verification_failed": "The announced device could not be verified through its local connection."
     }
   },
   "options": {

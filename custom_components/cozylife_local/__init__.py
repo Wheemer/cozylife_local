@@ -4,7 +4,11 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, PLATFORMS
+from .background_discovery import (
+    DATA_DISCOVERY_SERVICE,
+    async_get_background_discovery,
+)
+from .const import DISCOVERY_CONTROLLER_ENTRY_TYPE, DOMAIN, PLATFORMS
 from .coordinator import CozyLifeCoordinator
 from .cozylife_api import CozyLifeDevice
 from .discovery import async_load_model_catalog
@@ -12,8 +16,27 @@ from .discovery import async_load_model_catalog
 _LOGGER = logging.getLogger(__name__)
 
 
+async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
+    """Set up the integration-wide UDP listener lifecycle."""
+
+    hass.data.setdefault(DOMAIN, {})
+    try:
+        await async_get_background_discovery(hass)
+    except OSError as err:
+        # The listener is a discovery enhancement. Preserve already configured
+        # local entries when the OS cannot currently create a UDP socket; a
+        # later config-entry setup will retry it.
+        _LOGGER.warning("Unable to start shared CozyLife UDP discovery: %s", err)
+
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up CozyLife (New) from a config entry."""
+
+    # Home Assistant calls async_setup before config entries, but retain this
+    # harmless guard for direct setup/reload paths and isolated test harnesses.
+    hass.data.setdefault(DOMAIN, {})
 
     # Check for debug logging option
     pkg_logger = logging.getLogger(__package__)
@@ -23,9 +46,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         pkg_logger.setLevel(logging.NOTSET)
 
-    hass.data.setdefault(DOMAIN, {})
-    await async_load_model_catalog(hass)
+    discovery = hass.data[DOMAIN].get(DATA_DISCOVERY_SERVICE)
+    if discovery is None or not discovery.is_running:
+        try:
+            discovery = await async_get_background_discovery(hass)
+        except OSError as err:
+            _LOGGER.warning("Unable to start shared CozyLife UDP discovery: %s", err)
+            discovery = None
 
+    # This controller entry is created by the no-fields config flow. It keeps
+    # the integration loaded (and therefore its shared discovery listener)
+    # across restarts, but owns no device platforms itself.
+    if entry.data.get("entry_type") == DISCOVERY_CONTROLLER_ENTRY_TYPE:
+        return True
+
+    await async_load_model_catalog(hass)
     ip_address = entry.data["ip_address"]
 
     # Create a CozyLifeDevice instance for this entry
@@ -63,10 +98,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Create a coordinator for this device
     coordinator = CozyLifeCoordinator(hass, device, entry)
-    # UDP setup is best-effort local discovery.  Do not make the config entry
-    # (and therefore every platform entity) wait for a datagram socket to be
-    # created; the task owns the listener and begins the status loop when it
-    # is ready.
+    if discovery is not None and device.device_id:
+        discovery.register_device(
+            device.device_id,
+            coordinator.async_handle_discovered_address,
+        )
+        if coordinator.is_sensor and device.device_id.startswith("sleeping_sensor_"):
+            # Manual sleeping-sensor setup begins with an entry-local ID. A
+            # UDP reply can still prove this configured address is reachable;
+            # use it to request status, while TCP remains responsible for
+            # promoting the real device ID.
+            discovery.register_address(
+                ip_address,
+                coordinator.async_handle_discovered_address,
+            )
     hass.async_create_task(coordinator.async_start_discovery())
 
     if coordinator.is_sensor:
@@ -96,10 +141,17 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    if entry.data.get("entry_type") == DISCOVERY_CONTROLLER_ENTRY_TYPE:
+        return True
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        service = hass.data[DOMAIN].get(DATA_DISCOVERY_SERVICE)
+        if service is not None and coordinator.device.device_id:
+            service.unregister_device(coordinator.device.device_id)
+            service.unregister_address(entry.data.get("ip_address", ""))
         await coordinator.async_close()
 
     return unload_ok

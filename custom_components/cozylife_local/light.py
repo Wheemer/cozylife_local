@@ -69,10 +69,12 @@ async def async_setup_entry(
 class CozyLifeLight(CoordinatorEntity[CozyLifeCoordinator], LightEntity):
     """Representation of a CozyLife Light."""
 
+    _attr_has_entity_name = True
+
     def __init__(self, coordinator: CozyLifeCoordinator, entry: ConfigEntry):
         """Initialize the CozyLife Light."""
         super().__init__(coordinator)
-        self._attr_name = coordinator.device.device_model_name
+        self._attr_name = None
         self._attr_unique_id = f"{coordinator.device.device_id}_light"
         model_min_kelvin, model_max_kelvin = _kelvin_range_for_pid(
             coordinator.device.pid

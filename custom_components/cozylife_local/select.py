@@ -76,11 +76,12 @@ class CozyLifePowerOnStateSelect(
     """Power-on restore behavior for the metering socket."""
 
     _attr_entity_category = EntityCategory.CONFIG
+    _attr_has_entity_name = True
     _attr_options = list(POWER_ON_STATE_OPTIONS)
 
     def __init__(self, coordinator: CozyLifeCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = f"{coordinator.device.device_model_name} Power-on State"
+        self._attr_name = "Power-on state"
         self._attr_unique_id = f"{coordinator.device.device_id}_power_on_state"
 
     @property
@@ -126,11 +127,12 @@ class CozyLifeLedStatusSelect(
     """Indicator LED behavior for the metering socket."""
 
     _attr_entity_category = EntityCategory.CONFIG
+    _attr_has_entity_name = True
     _attr_options = list(LED_STATUS_OPTIONS)
 
     def __init__(self, coordinator: CozyLifeCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = f"{coordinator.device.device_model_name} LED Status"
+        self._attr_name = "LED status"
         self._attr_unique_id = f"{coordinator.device.device_id}_led_status"
 
     @property

@@ -1,6 +1,7 @@
 """Constants for the CozyLife (New) integration."""
 
 DOMAIN = "cozylife_local"
+DISCOVERY_CONTROLLER_ENTRY_TYPE = "discovery_controller"
 
 # Local DPID names used by currently exposed, catalog-backed entities.
 SWITCH = '1'

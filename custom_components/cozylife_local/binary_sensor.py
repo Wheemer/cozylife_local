@@ -111,6 +111,8 @@ async def async_setup_entry(
 class CozyLifeBinarySensor(CoordinatorEntity[CozyLifeCoordinator], BinarySensorEntity):
     """Binary sensor for CozyLife sensor devices."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: CozyLifeCoordinator,
@@ -118,7 +120,7 @@ class CozyLifeBinarySensor(CoordinatorEntity[CozyLifeCoordinator], BinarySensorE
     ) -> None:
         super().__init__(coordinator)
         self._description = description
-        self._attr_name = f"{coordinator.device.device_model_name} {description.name}"
+        self._attr_name = description.name
         self._attr_unique_id = f"{coordinator.device.device_id}_{description.key}"
         self._attr_device_class = description.device_class
 

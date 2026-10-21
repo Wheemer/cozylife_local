@@ -69,7 +69,7 @@ Local integration relies on sending network packets directly to your device's IP
 
 ### Step 2.3: Locating Your Device's IP Address
 
-You will need the local IP address of your device if you prefer to add it manually or verify its network connectivity.
+You may need the local IP address to verify network connectivity or a DHCP reservation. Automatic discovery does not require entering it into the integration.
 
 #### Method A: Inside the CozyLife App
 1. Open the CozyLife App and tap on your device.
@@ -85,24 +85,21 @@ Look for hostnames representing popular IoT chips used by CozyLife. Common hostn
 *   `CozyLife_XXXXXX`
 
 #### Method C: Network Scanner Tools
-Use tools like **Angry IP Scanner** (PC/Mac) or **Fing** (Mobile App) to scan port `5555`. All online CozyLife devices listen on **port 5555** (both UDP and TCP).
+Use tools like **Angry IP Scanner** (PC/Mac) or **Fing** (Mobile App) to scan **TCP** port `5555`. CozyLife's APK-style local discovery is a separate **UDP** broadcast exchange on port `6095`; a TCP scan cannot substitute for that discovery exchange.
 
 ---
 
 ## 3. Home Assistant Integration Setup
 
-Once your device is connected to your Wi-Fi and has a reserved IP address, you can add it to Home Assistant:
+Once your device is connected to Wi-Fi, add CozyLife Local to Home Assistant:
 
 ```
 Settings ➔ Devices & Services ➔ + Add Integration ➔ CozyLife Local
 ```
 
-### Setup Flow Fields:
-*   **IP Address (Optional)**:
-    *   *Leave empty* to scan the local subnet automatically.
-    *   *Enter a single IP* (e.g., `192.168.1.144`) to add that specific device directly.
-*   **Network CIDR (Optional)**: The default is `auto` (which scans your Home Assistant instance's default network). You can override this to scan a specific subnet (e.g., `192.168.10.0/24`).
-*   **Sleeping temp/humidity sensor (Checkbox)**: Check this box **ONLY** if the IP you entered belongs to a battery-powered environmental sensor. (See [Sleeping Battery-Powered Sensors](#sleeping-battery-powered-sensors-temphumidity) below).
+Click **Submit**. The integration creates one persistent discovery controller with no IP address, CIDR, or sensor-profile fields. It sends the APK-style UDP/6095 discovery frame every 500 ms. A newly announced device appears in Home Assistant's normal discovered-device card; click **Add** to create its entry. A powered device is verified through local TCP/5555 at that point.
+
+For a supported sleeping temperature/humidity sensor, its UDP announcement supplies the PID and local address. When you click **Add**, the integration uses that saved announcement rather than asking the sensor to wake a second time, then begins the same 500 ms known-address status probing. It does not assume a fixed wake or report schedule.
 
 After setup, the integration exposes the configured local IP address as a diagnostic sensor on the Home Assistant device page. Use that visible IP when checking DHCP reservations, router firewall rules, or direct port `5555` connectivity.
 
@@ -148,7 +145,7 @@ CozyLife smart lights can range from basic dimmable warm white to fully addressa
 
 ### Sleeping Battery-Powered Sensors (Temp/Humidity)
 
-Battery-powered sensors can sleep between reports. Select **Sleeping temp/humidity sensor**, provide its DHCP-reserved IP, and choose the exact supported model profile. Home Assistant creates Temperature, Humidity, and Battery entities from that profile without waiting for an initial response.
+Battery-powered sensors can sleep between reports. When one answers the integration's local UDP discovery request, Home Assistant shows its normal discovered-device card. Click **Add**; the saved announcement supplies the product identity and local address, so the integration creates the Temperature, Humidity, and Battery entities without waiting for a second response.
 
 The integration keeps the APK-derived local status transport available for valid reports, but does not configure a report interval or claim a fixed wake cadence. The device controls when it is available.
 
@@ -159,7 +156,7 @@ The integration keeps the APK-derived local status transport available for valid
 If you have completed setup but your devices keep dropping off or showing as `Unavailable`, review these network settings:
 
 *   **AP Isolation (Client Isolation)**: Some routers have a security feature called "Access Point Isolation" or "Wireless Client Isolation" enabled. This prevents Wi-Fi devices from talking directly to each other or to your Home Assistant server. **Ensure this setting is DISABLED** in your router's wireless options.
-*   **UDP Discovery Broadcasts**: CozyLife discovery sends UDP broadcasts to port `6095`. If discovery does not find a device, confirm that broadcasts can cross the relevant LAN segment; direct setup can use the device's known IP instead.
+*   **UDP Discovery Broadcasts**: CozyLife discovery sends UDP broadcasts to port `6095`. After the one-time discovery controller is added, it keeps one shared local listener active and presents an announced, unconfigured device for confirmation. If discovery does not find a device, confirm that broadcasts can cross the relevant LAN segment; a device that never answers local discovery cannot be identified automatically.
 *   **TCP Port 5555**: Local device status and control use TCP port `5555`. Ensure that no internal firewall or parent-router rule blocks traffic between Home Assistant and the device IP range.
 *   **IP Ping Test**: A successful ping can confirm basic reachability, but a failed ping does not prove a CozyLife device is offline: devices may ignore ICMP and battery sensors can sleep between reports.
 

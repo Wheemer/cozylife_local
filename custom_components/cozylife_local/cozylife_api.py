@@ -2,9 +2,8 @@ import asyncio
 import inspect
 import json
 import logging
-import socket
 import time
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .discovery import get_model_info
 
@@ -20,115 +19,6 @@ CMD_QUERY = 2
 CMD_SET = 3
 DPID_QUERY_ATTEMPTS = 3
 _last_sn = 0
-
-
-class _CozyLifeDiscoveryProtocol(asyncio.DatagramProtocol):
-    """Receive Cozy Life's local UDP discovery replies."""
-
-    def __init__(self, device_id: str, found: Callable[[str], Awaitable[None]]) -> None:
-        self._device_id = device_id
-        self._found = found
-
-    def datagram_received(self, data: bytes, _addr: tuple[str, int]) -> None:
-        """Accept only the reply for the configured Cozy Life device."""
-        try:
-            frame = json.loads(data.decode("utf-8").split("\r\n", 1)[0])
-            message = frame["msg"]
-            if message.get("did") != self._device_id:
-                return
-            ip_address = message.get("ip")
-            if not isinstance(ip_address, str) or not ip_address:
-                return
-        except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
-            return
-
-        asyncio.create_task(self._found(ip_address))
-
-
-class CozyLifeUdpDiscovery:
-    """Keep the APK's local UDP discovery path available for a device.
-
-    The APK broadcasts ``cmd: 0`` to UDP/6095 and matches reply ``msg.did`` to
-    refresh the local TCP address.  The APK's ``UdpBoardcastChecker`` starts
-    this discovery cycle from its 10-second application daemon.  The Home
-    Assistant integration retains its configured address for local probes, so
-    discovery replies are used to verify or refresh that address rather than
-    being a prerequisite for every TCP attempt.
-    """
-
-    def __init__(
-        self,
-        device_id: str,
-        found: Callable[[str], Awaitable[None]],
-        interval: float,
-    ) -> None:
-        self._device_id = device_id
-        self._found = found
-        self._interval = interval
-        self._socket: socket.socket | None = None
-        self._task: asyncio.Task[None] | None = None
-        self._receive_task: asyncio.Task[None] | None = None
-
-    async def async_start(self) -> None:
-        """Open one non-blocking ephemeral UDP socket, as the APK does."""
-        loop = asyncio.get_running_loop()
-        udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        udp_socket.bind(("0.0.0.0", 0))
-        udp_socket.setblocking(False)
-        self._socket = udp_socket
-        self._task = asyncio.create_task(
-            self._async_broadcast_loop(),
-            name=f"cozylife-discovery-{self._device_id}",
-        )
-        self._receive_task = asyncio.create_task(
-            self._async_receive_loop(loop),
-            name=f"cozylife-discovery-receiver-{self._device_id}",
-        )
-
-    async def async_stop(self) -> None:
-        """Stop discovery and release its UDP socket."""
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
-        if self._receive_task:
-            self._receive_task.cancel()
-            try:
-                await self._receive_task
-            except asyncio.CancelledError:
-                pass
-            self._receive_task = None
-        if self._socket:
-            self._socket.close()
-            self._socket = None
-
-    async def _async_broadcast_loop(self) -> None:
-        """Send the exact APK UDP discovery request on its daemon cadence."""
-        while True:
-            udp_socket = self._socket
-            if udp_socket is None:
-                return
-            message = {"cmd": 0, "pv": 0, "sn": _get_sn(), "msg": {}}
-            udp_socket.sendto(
-                (json.dumps(message, separators=(",", ":")) + "\r\n").encode(),
-                ("255.255.255.255", COZYLIFE_UDP_DISCOVERY_PORT),
-            )
-            await asyncio.sleep(self._interval)
-
-    async def _async_receive_loop(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Process matching replies from the same ephemeral discovery socket."""
-        while self._socket is not None:
-            try:
-                data, _address = await loop.sock_recvfrom(self._socket, 4096)
-            except (OSError, asyncio.CancelledError):
-                return
-            _CozyLifeDiscoveryProtocol(self._device_id, self._found).datagram_received(
-                data, _address
-            )
 
 
 def _get_sn() -> str:
@@ -450,9 +340,10 @@ class CozyLifeDevice:
 
     async def _async_send_status(self) -> bool:
         """Send one status frame while the status transport lock is held."""
-        # The APK's shared TCP pool is cleaned by its 10-second app daemon.
-        # Recycle the local sensor socket on the same cadence so a later wake
-        # window gets a new TCP connection rather than writes to a stale one.
+        # The APK's UDP daemon cadence and this TCP lifecycle are separate.
+        # Recycle a retained sensor socket after the integration's 30-second
+        # local transport window so a later wake probe does not write to a
+        # stale peer connection.
         if (
             self._writer
             and not self._writer.is_closing()
