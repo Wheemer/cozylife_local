@@ -767,9 +767,36 @@ def test_persistent_transport_preserves_existing_info_state_and_set_commands() -
             assert device.dpid == ["1", "11", "18", "19", "20"]
             assert await device.async_get_state(["1", "11"]) == {"1": True, "11": 42}
             assert await device.async_set_state({"1": False})
+            await asyncio.sleep(0.05)
             assert len(requests) == 4
             assert requests[-1]["cmd"] == 3
             assert requests[-1]["msg"] == {"attr": [1], "data": {"1": False}}
+        finally:
+            await device.async_close()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
+def test_property_write_succeeds_without_a_correlated_reply() -> None:
+    """The APK regards a completed local CMD_SET write as success."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        async def handler(reader, writer) -> None:
+            request = json.loads((await reader.readline()).decode())
+            assert request["cmd"] == 3
+            assert request["msg"] == {"attr": [1], "data": {"1": False}}
+            # Deliberately no reply: the APK writer does not wait for one.
+            await asyncio.sleep(0.05)
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handler, "127.0.0.1", 5555)
+        device = CozyLifeDevice("127.0.0.1", timeout=0.1)
+        try:
+            assert await device.async_set_state({"1": False})
         finally:
             await device.async_close()
             server.close()
