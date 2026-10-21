@@ -156,7 +156,7 @@ The integration keeps the APK-derived local status transport available for valid
 If you have completed setup but your devices keep dropping off or showing as `Unavailable`, review these network settings:
 
 *   **AP Isolation (Client Isolation)**: Some routers have a security feature called "Access Point Isolation" or "Wireless Client Isolation" enabled. This prevents Wi-Fi devices from talking directly to each other or to your Home Assistant server. **Ensure this setting is DISABLED** in your router's wireless options.
-*   **UDP Discovery Broadcasts**: CozyLife discovery sends UDP broadcasts to port `6095`. Opening the integration's setup flow, or running a configured entry, activates one shared local listener and presents an announced, unconfigured device for confirmation. If discovery does not find a device, confirm that broadcasts can cross the relevant LAN segment; direct setup can use the device's known IP instead.
+*   **UDP Discovery Broadcasts**: CozyLife discovery sends UDP broadcasts to port `6095`. After the one-time discovery controller is added, it keeps one shared local listener active and presents an announced, unconfigured device for confirmation. If discovery does not find a device, confirm that broadcasts can cross the relevant LAN segment; a device that never answers local discovery cannot be identified automatically.
 *   **TCP Port 5555**: Local device status and control use TCP port `5555`. Ensure that no internal firewall or parent-router rule blocks traffic between Home Assistant and the device IP range.
 *   **IP Ping Test**: A successful ping can confirm basic reachability, but a failed ping does not prove a CozyLife device is offline: devices may ignore ICMP and battery sensors can sleep between reports.
 
