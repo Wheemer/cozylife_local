@@ -35,6 +35,31 @@ meaning and a safe Home Assistant entity mapping.
   controls are mapped, the integration will add only entities that match the
   verified local behavior.
 
+## Product-audit queue
+
+Every Wi-Fi category in the APK catalogue is in scope. The current audit has
+separated products with verified local semantics from products whose controls
+are still opaque:
+
+- Electrical: 288 of 292 Wi-Fi profiles have verified entities; the four
+  remaining profiles advertise no actionable DPID.
+- Lights (334), motors (4), and home appliances (7) have verified local
+  entities.
+- Sensors: 14 of 15 Wi-Fi profiles have documented entities; the remaining
+  profile is labelled a Zigbee door magnet despite its catalogue network flag.
+- Energy: 13 of 15 Wi-Fi profiles expose documented telemetry. The other two
+  advertise only a bit-mask output DPID without a channel map.
+- Gateways: the one Wi-Fi profile has a documented discovery-mode entity.
+- Camera & lock: 10 of 43 profiles advertise the verified video-state DPID
+  set. The remaining lock and camera controls await a verified local/session
+  protocol.
+- DIY: all three Wi-Fi profiles expose only opaque DPID-51 JSON.
+- AI conversation (32) and smart speaker (2): their panel services are
+  downloaded after sign-in from the CozyLife API. This APK includes only their
+  service IDs and DPID lists, not the control mapping; no local entity is
+  invented until that panel source is obtained and traced.
+- Outdoor travel has no Wi-Fi profiles in this APK catalogue.
+
 ## Transport rule
 
 The APK uses `cmd:2, attr:[1]` for sleeping-sensor status checks and
