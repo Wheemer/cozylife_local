@@ -28,6 +28,24 @@ def _load_api():
     return CozyLifeDevice
 
 
+def test_connection_refusal_is_retained_for_diagnostics() -> None:
+    """A local refusal remains inspectable after the failed request returns."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        device = CozyLifeDevice("192.0.2.50", timeout=0.1)
+
+        async def refuse(*_args, **_kwargs):
+            raise ConnectionRefusedError(111, "Connection refused")
+
+        with patch("asyncio.open_connection", refuse):
+            assert await device.async_send_status() is False
+
+        assert device.last_transport_error == "ConnectionRefusedError: [Errno 111] Connection refused"
+
+    asyncio.run(exercise())
+
+
 def _load_coordinator():
     """Load coordinator logic with the minimal Home Assistant interfaces it uses."""
     _load_api()
@@ -41,6 +59,13 @@ def _load_coordinator():
         @classmethod
         def __class_getitem__(cls, _item):
             return cls
+    background_discovery = types.ModuleType("cozylife_local.background_discovery")
+
+    async def async_get_background_discovery(_hass):
+        return None
+
+    background_discovery.async_get_background_discovery = async_get_background_discovery
+    sys.modules["cozylife_local.background_discovery"] = background_discovery
 
     update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
     update_coordinator.UpdateFailed = RuntimeError
@@ -355,6 +380,50 @@ def test_status_write_dispatches_a_delayed_report_without_waiting() -> None:
             await asyncio.sleep(0.3)
             assert reports == [
                 {"cmd": 2, "sn": "delayed", "msg": {"data": {"1": True}}}
+            ]
+        finally:
+            await device.async_close()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
+def test_listener_error_does_not_stop_the_persistent_reader() -> None:
+    """One bad entity callback must not discard a healthy device socket."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        reports: list[dict] = []
+        callback_count = 0
+
+        def listener(frame: dict) -> None:
+            nonlocal callback_count
+            callback_count += 1
+            if callback_count == 1:
+                raise ValueError("deliberate callback failure")
+            reports.append(frame)
+
+        async def handler(reader, writer) -> None:
+            await reader.readline()
+            writer.write(b'{"cmd":2,"sn":"first","msg":{"data":{"4":48}}}\r\n')
+            await writer.drain()
+            await asyncio.sleep(0.01)
+            writer.write(b'{"cmd":2,"sn":"second","msg":{"data":{"4":49}}}\r\n')
+            await writer.drain()
+            await asyncio.sleep(0.05)
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handler, "127.0.0.1", 5555)
+        device = CozyLifeDevice("127.0.0.1", timeout=1.0)
+        device.set_message_listener(listener)
+        try:
+            assert await device.async_send_status()
+            await asyncio.sleep(0.1)
+            assert callback_count == 2
+            assert reports == [
+                {"cmd": 2, "sn": "second", "msg": {"data": {"4": 49}}}
             ]
         finally:
             await device.async_close()
@@ -877,6 +946,38 @@ def test_state_query_accepts_apk_local_reply_with_a_different_sn() -> None:
     asyncio.run(exercise())
 
 
+def test_powered_property_query_uses_apk_complete_property_frame() -> None:
+    """Powered products request attr:[0], as the APK property path does."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        async def handler(reader, writer) -> None:
+            request = json.loads((await reader.readline()).decode())
+            assert request["cmd"] == 2
+            assert request["msg"] == {"attr": [0]}
+            writer.write(
+                (json.dumps({
+                    "cmd": 2,
+                    "sn": "full-property-event",
+                    "msg": {"data": {"1": True, "4": 50}},
+                }) + "\r\n").encode()
+            )
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handler, "127.0.0.1", 5555)
+        device = CozyLifeDevice("127.0.0.1", timeout=1.0)
+        try:
+            assert await device.async_get_properties() == {"1": True, "4": 50}
+        finally:
+            await device.async_close()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
 def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     """Do not expose catalog-only lights or non-Wi-Fi sensors as local devices."""
     _load_api()
@@ -892,6 +993,15 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     zigbee_environment_sensor = classify_device("v2kv9f", "03", ["8", "9"])
     bluetooth_environment_sensor = classify_device("bQ2cGF", "03", ["4", "8", "9"])
     appliance = classify_device("CJjAvl", "05", ["1"])
+    tower_fan = classify_device("blEGaW", "02", ["1", "4", "9", "10", "11"])
+    power_station = classify_device("h70fk5", "06", ["1", "2", "3", "4", "21"])
+    multi_sensor = classify_device("t8nvdb", "03", ["4", "6", "7", "8"])
+    gateway = classify_device("v44j8s", "08", ["2"])
+    video_intercom = classify_device("wmX4pg", "11", ["101"])
+    door_lock = classify_device("XxxGn1", "11", ["101"])
+    speaker = classify_device("GriFPh", "23", ["1", "2", "3", "4", "5", "6"])
+    ai_lamp = classify_device("HFyhNc", "22", ["201", "0"])
+    ai_companion = classify_device("Eklp7l", "22", ["201", "202", "203"])
 
     assert known_light.is_light
     assert not catalog_only_light.is_light
@@ -904,7 +1014,17 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     assert not zigbee_environment_sensor.is_local_transport
     assert not bluetooth_environment_sensor.is_environment_sensor
     assert not bluetooth_environment_sensor.is_local_transport
-    assert not appliance.supports_switch_entities
+    assert appliance.is_generic_power_device
+    assert appliance.supports_switch_entities
+    assert tower_fan.is_fan
+    assert power_station.is_energy_storage
+    assert multi_sensor.is_multi_sensor
+    assert gateway.is_gateway
+    assert video_intercom.is_video_intercom
+    assert not door_lock.is_video_intercom
+    assert speaker.is_speaker
+    assert ai_lamp.is_light
+    assert ai_companion.is_ai_expression_device
 
 
 def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:
@@ -932,6 +1052,46 @@ def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:
         assert required <= model.dpids, pid
 
 
+def test_discovery_eligibility_matches_the_supported_local_boundary() -> None:
+    """Do not let catalog presence turn deferred product families into entries."""
+    _load_api()
+    from cozylife_local.discovery import (
+        classify_device,
+        get_model_info,
+        supports_local_entities,
+    )
+
+    supported_pids = {
+        "hjk1jk",  # electrical socket
+        "asdlks",  # light
+        "blEGaW",  # fan
+        "CJjAvl",  # appliance
+        "h70fk5",  # power station
+        "Z4tRml",  # sleeping temperature/humidity sensor
+        "JTFMlo",  # temperature/humidity/motion sensor
+        "GriFPh",  # X7 speaker
+        "HFyhNc",  # panel-verified AI lamp
+        "Eklp7l",  # panel-verified AI companion expression
+    }
+    deferred_pids = {
+        "m0ldju",  # opaque DIY DPID-51 payload
+        "XxxGn1",  # lock/session protocol
+        "knAmlh",  # generic AI conversation profile
+    }
+
+    for pid in supported_pids:
+        model = get_model_info(pid)
+        assert model is not None, pid
+        classification = classify_device(pid, model.type_code, model.dpids)
+        assert supports_local_entities(pid, classification), pid
+
+    for pid in deferred_pids:
+        model = get_model_info(pid)
+        assert model is not None, pid
+        classification = classify_device(pid, model.type_code, model.dpids)
+        assert not supports_local_entities(pid, classification), pid
+
+
 def test_all_catalogued_wifi_electrical_relays_and_meters_get_local_entities() -> None:
     """Keep every APK Wi-Fi electrical relay on the supported local path."""
     _load_api()
@@ -944,7 +1104,7 @@ def test_all_catalogued_wifi_electrical_relays_and_meters_get_local_entities() -
     ]
     assert electrical_models
 
-    meter_dpids = {"26", "27", "28", "29"}
+    meter_dpids = {"26", "27", "28", "29", "42"}
     for model in electrical_models:
         classification = classify_device(
             model.product_id,
@@ -955,6 +1115,80 @@ def test_all_catalogued_wifi_electrical_relays_and_meters_get_local_entities() -
             assert classification.supports_switch_entities, model.product_id
         if meter_dpids & model.dpids:
             assert classification.supports_plug_metering, model.product_id
+
+
+def test_all_catalogued_wifi_appliances_with_power_dpid_get_a_switch() -> None:
+    """Expose the documented DPID-1 switch_power control for each appliance."""
+    _load_api()
+    from cozylife_local.discovery import _load_model_catalog, classify_device
+
+    appliances = [
+        model
+        for model in _load_model_catalog().values()
+        if model.type_code == "05" and model.network_type == "02"
+    ]
+    assert appliances
+
+    for model in appliances:
+        classification = classify_device(
+            model.product_id,
+            model.type_code,
+            model.dpids,
+        )
+        if "1" in model.dpids:
+            assert classification.is_generic_power_device, model.product_id
+            assert classification.supports_switch_entities, model.product_id
+
+
+def test_catalogued_wifi_energy_profiles_with_telemetry_get_local_entities() -> None:
+    """Recognize every APK Wi-Fi power-station profile with defined telemetry."""
+    _load_api()
+    from cozylife_local.discovery import _load_model_catalog, classify_device
+
+    energy_models = [
+        model
+        for model in _load_model_catalog().values()
+        if model.type_code == "06" and model.network_type == "02"
+    ]
+    assert energy_models
+
+    for model in energy_models:
+        classification = classify_device(
+            model.product_id,
+            model.type_code,
+            model.dpids,
+        )
+        if {"3", "4"} & model.dpids:
+            assert classification.is_energy_storage, model.product_id
+
+
+def test_energy_output_channels_require_the_documented_telemetry_pairing() -> None:
+    """Full power stations retain their documented branch telemetry profile."""
+    _load_api()
+    from cozylife_local.discovery import _load_model_catalog
+
+    energy_models = [
+        model
+        for model in _load_model_catalog().values()
+        if model.type_code == "06" and model.network_type == "02"
+    ]
+    branch_dpids = {str(dpid) for dpid in range(5, 13)}
+    channelled_models = [
+        model
+        for model in energy_models
+        if "1" in model.dpids and branch_dpids <= model.dpids
+    ]
+    assert len(channelled_models) == 12
+    documented_input_dpids = {str(dpid) for dpid in range(22, 30)}
+    for model in channelled_models:
+        assert documented_input_dpids <= model.dpids, model.product_id
+        assert {"2", "3", "4", "21", "30", "31", "32", "44"} <= model.dpids, (
+            model.product_id
+        )
+    assert {model.product_id for model in energy_models if model.dpids == {"1"}} == {
+        "JTEnK3",
+        "XZUWYv",
+    }
 
 
 def test_manual_sensor_choices_include_only_apk_wifi_profiles() -> None:
@@ -968,12 +1202,109 @@ def test_manual_sensor_choices_include_only_apk_wifi_profiles() -> None:
     assert "v2kv9f" not in pids
 
 
+def test_wifi_temperature_humidity_motion_profile_exposes_motion() -> None:
+    """The APK's JTFMlo profile has a documented DPID-6 motion report."""
+    _load_api()
+    components = types.ModuleType("homeassistant.components")
+    binary_sensor_component = types.ModuleType("homeassistant.components.binary_sensor")
+
+    class BinarySensorDeviceClass:
+        DOOR = "door"
+        MOISTURE = "moisture"
+        MOTION = "motion"
+        BATTERY = "battery"
+        OCCUPANCY = "occupancy"
+
+    binary_sensor_component.BinarySensorDeviceClass = BinarySensorDeviceClass
+    binary_sensor_component.BinarySensorEntity = object
+    config_entries = types.ModuleType("homeassistant.config_entries")
+    config_entries.ConfigEntry = object
+    entity = types.ModuleType("homeassistant.helpers.entity")
+    entity.DeviceInfo = dict
+    update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
+
+    class CoordinatorEntity:
+        @classmethod
+        def __class_getitem__(cls, _item):
+            return cls
+
+    update_coordinator.CoordinatorEntity = CoordinatorEntity
+    sys.modules["homeassistant.components"] = components
+    sys.modules["homeassistant.components.binary_sensor"] = binary_sensor_component
+    sys.modules["homeassistant.config_entries"] = config_entries
+    sys.modules["homeassistant.helpers.entity"] = entity
+    sys.modules["homeassistant.helpers.update_coordinator"] = update_coordinator
+    sys.modules.pop("cozylife_local.binary_sensor", None)
+    from cozylife_local.binary_sensor import _binary_sensor_descriptions
+
+    descriptions = _binary_sensor_descriptions("JTFMlo", ["4", "6", "8", "9"])
+    assert {(description.key, description.dpid) for description in descriptions} == {
+        ("motion", "6"),
+    }
+
+
+def test_wifi_catalogue_flag_wins_over_misleading_contact_sensor_name() -> None:
+    """The Wi-Fi-labelled gate magnet is retained on the local contact path."""
+    _load_api()
+    from cozylife_local.discovery import LOCAL_BINARY_SENSOR_PIDS, get_model_info
+
+    model = get_model_info("o64g7o")
+    assert model is not None
+    assert model.network_type == "02"
+    assert {"7", "9"} <= model.dpids
+    assert model.product_id in LOCAL_BINARY_SENSOR_PIDS
+
+
 def test_platforms_exclude_home_assistant_schedule_emulation() -> None:
     """Keep scheduling in Home Assistant automations, not this integration."""
     _load_api()
     from cozylife_local.const import PLATFORMS
 
     assert "time" not in PLATFORMS
+
+
+def test_all_catalogued_wifi_speakers_get_a_media_player() -> None:
+    """The APK's X7 panel verifies the two Wi-Fi speaker profiles."""
+    _load_api()
+    from cozylife_local.discovery import _load_model_catalog, classify_device
+
+    speakers = [
+        model
+        for model in _load_model_catalog().values()
+        if model.type_code == "23" and model.network_type == "02"
+    ]
+    assert {model.product_id for model in speakers} == {"GriFPh", "ZhTBTj"}
+
+    for model in speakers:
+        classification = classify_device(
+            model.product_id, model.type_code, model.dpids
+        )
+        assert classification.is_speaker, model.product_id
+
+
+def test_recovered_ai_lamp_panel_adds_its_verified_local_dpids() -> None:
+    """AI lamp profiles use the recovered panel's DPID 1/4 control map."""
+    _load_api()
+    from cozylife_local.discovery import classify_device, get_model_info
+
+    for pid in ("HFyhNc", "fBhCXl"):
+        model = get_model_info(pid)
+        assert model is not None
+        assert {"1", "4"} <= model.dpids
+        assert classify_device(pid, model.type_code, model.dpids).is_light
+
+
+def test_recovered_s3_panel_adds_its_verified_expression_dpid() -> None:
+    """The exact S3 panel maps five expression values to local DPID 211."""
+    _load_api()
+    from cozylife_local.discovery import classify_device, get_model_info
+
+    model = get_model_info("Eklp7l")
+    assert model is not None
+    assert "211" in model.dpids
+    assert classify_device(
+        model.product_id, model.type_code, model.dpids
+    ).is_ai_expression_device
 
 
 def test_powered_device_accepts_apk_style_async_state_report() -> None:
@@ -1011,8 +1342,8 @@ def test_environment_report_accepts_a_valid_partial_measurement() -> None:
     assert not coordinator._has_valid_environment_measurements({"4": 0})
 
 
-def test_powered_udp_announcement_gates_one_status_write_per_reply() -> None:
-    """Every fresh matching UDP reply gates one APK-style status write."""
+def test_powered_udp_announcement_does_not_query_device() -> None:
+    """A powered device refreshes its address without a discovery-triggered query."""
     CozyLifeCoordinator = _load_coordinator()
 
     async def exercise() -> None:
@@ -1044,8 +1375,37 @@ def test_powered_udp_announcement_gates_one_status_write_per_reply() -> None:
         await coordinator.async_handle_discovered_address("10.0.0.44")
         await coordinator.async_handle_discovered_address("10.0.0.45")
 
-        assert status_writes == [True, True]
+        assert status_writes == []
         assert updates == [{"ip_address": "10.0.0.45"}]
+
+    asyncio.run(exercise())
+
+
+def test_powered_device_recovery_uses_vendor_retry_cadence() -> None:
+    """Powered-device retries remain independent from UDP announcements."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        coordinator = object.__new__(CozyLifeCoordinator)
+        refreshes: list[bool] = []
+        delays: list[float] = []
+
+        async def refresh() -> None:
+            refreshes.append(True)
+
+        async def sleep(delay: float) -> None:
+            delays.append(delay)
+            raise asyncio.CancelledError
+
+        coordinator.async_request_refresh = refresh
+        with patch("cozylife_local.coordinator.asyncio.sleep", sleep):
+            try:
+                await coordinator._async_refresh_powered_device()
+            except asyncio.CancelledError:
+                pass
+
+        assert refreshes == [True]
+        assert delays == [60.0]
 
     asyncio.run(exercise())
 

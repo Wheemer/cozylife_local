@@ -35,6 +35,16 @@ LED_STATUS_OPTIONS = {
 LED_STATUS_VALUES = {
     value: option for option, value in LED_STATUS_OPTIONS.items()
 }
+AI_EXPRESSION_OPTIONS = {
+    "Happy": 1,
+    "Sad": 2,
+    "Disappointed": 3,
+    "Angry": 4,
+    "Surprised": 5,
+}
+AI_EXPRESSION_VALUES = {
+    value: option for option, value in AI_EXPRESSION_OPTIONS.items()
+}
 
 
 async def async_setup_entry(
@@ -59,6 +69,11 @@ async def async_setup_entry(
             entities.append(CozyLifePowerOnStateSelect(coordinator))
         if PLUG_LED_STATUS in dpids:
             entities.append(CozyLifeLedStatusSelect(coordinator))
+    if (
+        coordinator.classification.is_ai_expression_device
+        and "211" in (coordinator.device.dpid or [])
+    ):
+        entities.append(CozyLifeAiExpressionSelect(coordinator))
     if entities:
         async_add_entities(entities)
         return
@@ -77,12 +92,12 @@ class CozyLifePowerOnStateSelect(
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_has_entity_name = True
-    _attr_options = list(POWER_ON_STATE_OPTIONS)
 
     def __init__(self, coordinator: CozyLifeCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_name = "Power-on state"
         self._attr_unique_id = f"{coordinator.device.device_id}_power_on_state"
+        self._attr_options = list(POWER_ON_STATE_OPTIONS)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -128,12 +143,12 @@ class CozyLifeLedStatusSelect(
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_has_entity_name = True
-    _attr_options = list(LED_STATUS_OPTIONS)
 
     def __init__(self, coordinator: CozyLifeCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_name = "LED status"
         self._attr_unique_id = f"{coordinator.device.device_id}_led_status"
+        self._attr_options = list(LED_STATUS_OPTIONS)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -163,6 +178,57 @@ class CozyLifeLedStatusSelect(
         else:
             _LOGGER.warning(
                 "Failed to set LED status for CozyLife device %s",
+                self.coordinator.device.ip_address,
+            )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.async_write_ha_state()
+
+
+class CozyLifeAiExpressionSelect(
+    CoordinatorEntity[CozyLifeCoordinator],
+    SelectEntity,
+):
+    """Expression selector for the panel-verified CozyLife S3 profile."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: CozyLifeCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Expression"
+        self._attr_unique_id = f"{coordinator.device.device_id}_expression"
+        self._attr_options = list(AI_EXPRESSION_OPTIONS)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the parent device metadata."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device.device_id)},
+            name=self.coordinator.device.device_model_name,
+            manufacturer="CozyLife",
+            model=self.coordinator.device.pid,
+        )
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the expression value reported by the local S3 panel."""
+        raw = self.coordinator.data.get("211")
+        try:
+            return AI_EXPRESSION_VALUES.get(int(raw))
+        except (TypeError, ValueError):
+            return None
+
+    async def async_select_option(self, option: str) -> None:
+        """Set the local expression through the verified panel DPID."""
+        value = AI_EXPRESSION_OPTIONS[option]
+        if await self.coordinator.device.async_set_state({"211": value}):
+            self.coordinator.data["211"] = value
+            self.async_write_ha_state()
+        else:
+            _LOGGER.warning(
+                "Failed to set expression for CozyLife device %s",
                 self.coordinator.device.ip_address,
             )
 

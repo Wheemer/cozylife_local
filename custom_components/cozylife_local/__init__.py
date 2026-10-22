@@ -16,6 +16,23 @@ from .cozylife_api import CozyLifeDevice
 from .discovery import async_load_model_catalog
 
 _LOGGER = logging.getLogger(__name__)
+_DEBUG_ENTRY_IDS = "debug_entry_ids"
+
+
+def _refresh_debug_logging(hass: HomeAssistant) -> None:
+    """Keep package debug logging enabled while any entry requests it."""
+    enabled_entry_ids = hass.data[DOMAIN].get(_DEBUG_ENTRY_IDS, set())
+    logging.getLogger(__package__).setLevel(
+        logging.DEBUG if enabled_entry_ids else logging.NOTSET
+    )
+
+
+def _remove_debug_entry(hass: HomeAssistant, entry_id: str) -> None:
+    """Drop one entry's debug opt-in and update the package logger."""
+    debug_entry_ids = hass.data.get(DOMAIN, {}).get(_DEBUG_ENTRY_IDS)
+    if isinstance(debug_entry_ids, set):
+        debug_entry_ids.discard(entry_id)
+    _refresh_debug_logging(hass)
 
 
 async def _async_ensure_discovery_controller(hass: HomeAssistant) -> None:
@@ -84,13 +101,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # harmless guard for direct setup/reload paths and isolated test harnesses.
     hass.data.setdefault(DOMAIN, {})
 
-    # Check for debug logging option
-    pkg_logger = logging.getLogger(__package__)
+    # Debug logging is package-wide. Track every opted-in entry so setting up
+    # a second, non-debug device cannot silently disable diagnostics for the
+    # first one.
+    debug_entry_ids = hass.data[DOMAIN].setdefault(_DEBUG_ENTRY_IDS, set())
     if entry.options.get("enable_debug", False):
-        pkg_logger.setLevel(logging.DEBUG)
-        _LOGGER.debug(f"Debug logging enabled via options for {entry.title}")
+        debug_entry_ids.add(entry.entry_id)
     else:
-        pkg_logger.setLevel(logging.NOTSET)
+        debug_entry_ids.discard(entry.entry_id)
+    _refresh_debug_logging(hass)
+    if entry.options.get("enable_debug", False):
+        _LOGGER.debug("Debug logging enabled via options for %s", entry.title)
 
     discovery = hass.data[DOMAIN].get(DATA_DISCOVERY_SERVICE)
     if discovery is None or not discovery.is_running:
@@ -195,6 +216,7 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if entry.data.get("entry_type") == DISCOVERY_CONTROLLER_ENTRY_TYPE:
+        _remove_debug_entry(hass, entry.entry_id)
         return True
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -206,5 +228,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             service.unregister_device(coordinator.device.device_id, entry.entry_id)
             service.unregister_address(entry.data.get("ip_address", ""))
         await coordinator.async_close()
+        _remove_debug_entry(hass, entry.entry_id)
 
     return unload_ok

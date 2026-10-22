@@ -45,6 +45,7 @@ class CozyLifeDevice:
         self._reader_task: Optional[asyncio.Task[None]] = None
         self._connection_lock: Optional[asyncio.Lock] = None
         self._status_lock: Optional[asyncio.Lock] = None
+        self._last_transport_error: Optional[str] = None
 
     @property
     def ip_address(self) -> str:
@@ -69,6 +70,16 @@ class CozyLifeDevice:
     @property
     def device_type_code(self) -> Optional[str]:
         return self._device_type_code
+
+    @property
+    def last_transport_error(self) -> Optional[str]:
+        """Return the latest local TCP failure for diagnostics."""
+        return self._last_transport_error
+
+    @property
+    def is_connected(self) -> bool:
+        """Return whether the persistent local TCP writer remains usable."""
+        return self._writer is not None and not self._writer.is_closing()
 
     def set_timeout(self, timeout: float) -> None:
         """Set the bounded duration for one local request attempt."""
@@ -126,6 +137,7 @@ class CozyLifeDevice:
                     timeout=self._timeout,
                 )
             except (asyncio.TimeoutError, ConnectionRefusedError, OSError) as err:
+                self._last_transport_error = f"{type(err).__name__}: {err}"
                 _RAW_LOGGER.debug(
                     "Could not open CozyLife socket to %s:%s: %r",
                     self._ip_address,
@@ -141,6 +153,7 @@ class CozyLifeDevice:
                 self._read_frames(reader, writer),
                 name=f"cozylife-reader-{self._ip_address}",
             )
+            self._last_transport_error = None
             _RAW_LOGGER.debug(
                 "Connected persistent CozyLife socket at %s:%s",
                 self._ip_address,
@@ -222,9 +235,15 @@ class CozyLifeDevice:
 
                 listener = self._message_listener
                 if listener is not None:
-                    result = listener(frame)
-                    if inspect.isawaitable(result):
-                        await result
+                    try:
+                        result = listener(frame)
+                        if inspect.isawaitable(result):
+                            await result
+                    except Exception:  # noqa: BLE001 - listener is integration code.
+                        _LOGGER.exception(
+                            "Error dispatching CozyLife frame from %s",
+                            self._ip_address,
+                        )
         except (ConnectionError, OSError) as err:
             _LOGGER.debug("Persistent connection to %s ended: %s", self._ip_address, err)
         finally:
@@ -367,11 +386,21 @@ class CozyLifeDevice:
 
     async def async_get_status(self) -> Optional[Dict[str, Any]]:
         """Request APK status and await the next state frame, not a matching SN."""
+        return await self._async_get_state([1])
+
+    async def async_get_properties(self) -> Optional[Dict[str, Any]]:
+        """Request the APK's complete local property payload for a powered device."""
+        return await self._async_get_state([0])
+
+    async def _async_get_state(self, attributes: list[int]) -> Optional[Dict[str, Any]]:
+        """Request the selected APK state payload and await its state frame."""
         if self._status_lock is None:
             self._status_lock = asyncio.Lock()
 
         async with self._status_lock:
-            return await self._async_request_status(wait_for_state=True)
+            return await self._async_request_state(
+                attributes, wait_for_state=True
+            )
 
     async def async_send_status(self) -> bool:
         """Write the APK status request without requiring an accepted reply."""
@@ -379,14 +408,17 @@ class CozyLifeDevice:
             self._status_lock = asyncio.Lock()
 
         async with self._status_lock:
-            return (await self._async_request_status(wait_for_state=False)) is not None
+            return (
+                await self._async_request_state([1], wait_for_state=False)
+            ) is not None
 
-    async def _async_request_status(
+    async def _async_request_state(
         self,
+        attributes: list[int],
         *,
         wait_for_state: bool,
     ) -> Optional[Dict[str, Any]]:
-        """Use the APK write-and-listen status path over one durable socket."""
+        """Use the APK write-and-listen state path over one durable socket."""
         try:
             await self._connect()
             writer = self._writer
@@ -398,7 +430,7 @@ class CozyLifeDevice:
                 state_waiter = asyncio.get_running_loop().create_future()
                 self._state_waiters.append(state_waiter)
 
-            message = self._create_message(CMD_QUERY, {"attr": [1]})
+            message = self._create_message(CMD_QUERY, {"attr": attributes})
             encoded_message = (
                 json.dumps(message, separators=(",", ":")) + "\r\n"
             ).encode("utf8")

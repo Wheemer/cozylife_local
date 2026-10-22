@@ -25,11 +25,12 @@ KNOWN_SENSOR_PIDS = {'Z4tRml'}
 PLUG_COUNTDOWN = '2'        # countdown/timer, seconds
 PLUG_POWER_ON_STATE = '18'  # relay restore behavior after power loss, enum
 PLUG_LED_STATUS = '19'      # indicator LED behavior, enum
-PLUG_ENERGY = '26'          # add_ele, scale 3, kWh
+PLUG_ADDED_ENERGY = '26'    # add_ele; not the lifetime consumption counter
 PLUG_CURRENT = '27'         # cur_current, mA
 PLUG_POWER = '28'           # cur_power, scale 1, W
 PLUG_VOLTAGE = '29'         # cur_voltage, scale 1, V
 PLUG_OVERCURRENT_PROTECTION = '32'  # overcurrent protection enable flag
+PLUG_ENERGY = '42'          # total electricity consumption, raw value / 1000 kWh
 
 # Supported device types (derived from old integration, actual support depends on pid_list)
 SWITCH_TYPE_CODE = '00'
@@ -38,9 +39,11 @@ RGB_LIGHT_TYPE_CODE = '02'  # Some RGB lights report type code 02
 
 PLATFORMS = [
     "light",
+    "media_player",
     "switch",
     "sensor",
     "binary_sensor",
+    "fan",
     "number",
     "select",
 ]

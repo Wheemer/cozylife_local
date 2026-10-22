@@ -29,7 +29,7 @@
 
 **CozyLife Local is stable for the device families that have been confirmed through local validation and field reports.**
 
-Confirmed support currently includes multi-gang wall switches, dimmable and color-capable lights, sleeping temperature/humidity sensors, standard smart plugs, and power-metered outlets. Physical device specifications still vary by manufacturer and model layout, so unconfirmed CozyLife devices may need catalog or DPID adjustments.
+Confirmed support currently includes multi-gang wall switches, dimmable and color-capable lights (including two APK-panel-verified AI lamps), sleeping temperature/humidity sensors, standard smart plugs, power-metered outlets, and the APK-catalogued Wi-Fi X7 speakers. Physical device specifications still vary by manufacturer and model layout, so unconfirmed CozyLife devices may need catalog or DPID adjustments.
 
 We are still looking for reports to expand coverage for:
 
@@ -52,6 +52,7 @@ We are still looking for reports to expand coverage for:
 *   🎛️ **Multi-Gang Switch Bitmasks**: Native, low-level bitmask control on DPID 1 ensures multi-gang rockers (e.g., double or triple rocker switches) act as individual, responsive entities.
 *   🧩 **Switch Option Controls**: Exposes Power-on State, LED Status, and overcurrent protection controls only where the individual device reports the required DPIDs.
 *   📈 **Smart Energy Metering**: Exposes voltage, current, active power, and cumulative energy sensors (compatible with the HA Energy Dashboard), plus supported countdown and plug option controls.
+*   🔊 **Local Speaker Control**: The APK-catalogued Wi-Fi X7 speaker profiles expose local power, volume, play/pause, and Bluetooth, local-playback, or line-in source controls through one Home Assistant media player.
 *   💡 **State & Color-Mode Safeguards**: Smooth transitions and automatic work-mode state preservation prevents smart lights from glitching or flashing dark blue during custom RGB commands.
 *   🕒 **Light Countdowns**: Exposes validated local countdown controls on compatible bulbs.
 
@@ -110,7 +111,7 @@ When a wall switch reports the required option DPIDs, CozyLife Local exposes:
 
 Metered plugs expose outlet control plus electricity sensors:
 
-*   **Energy** (`DPID 26`) as kWh using `/1000`
+*   **Total energy consumption** (`DPID 42`) as kWh using `/1000`
 *   **Current** (`DPID 27`) as raw mA
 *   **Power** (`DPID 28`) as raw W
 *   **Voltage** (`DPID 29`) as raw V
@@ -149,7 +150,7 @@ CozyLife devices report their functionalities via standard Data Point IDs (DPIDs
 | `13` | Light Countdown | Countdown seconds on compatible lights. |
 | `18` | Power-on State | Relay restore behavior after power loss on compatible plugs and wall switches. |
 | `19` | LED Status | Indicator LED behavior on compatible plugs and wall switches. |
-| `26` | Cumulative Energy (kWh)| Exposes total energy consumption, fully compatible with HA Energy Dashboard. |
+| `42` | Total Energy Consumption (kWh)| Exposes total energy consumption, fully compatible with HA Energy Dashboard. |
 | `27` | Active Current (mA) | Live electrical current monitoring. |
 | `28` | Active Power (W) | Live active load power monitoring. |
 | `29` | Line Voltage (V) | Live grid voltage monitoring. |

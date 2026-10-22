@@ -18,6 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # The DPID used for controlling all switch/outlet gangs via a bitmask.
 BITMASK_DPID = "1"
+LIGHT_POWER_MEMORY_DPID = "9"
 
 
 async def async_setup_entry(
@@ -32,7 +33,27 @@ async def async_setup_entry(
         _LOGGER.error(f"Missing DPID list for {coordinator.device.ip_address}. Cannot set up switch.")
         return
 
-    if not coordinator.classification.supports_switch_entities:
+    dpids = supported_dpids(coordinator)
+    energy_output_numbers = sorted(
+        int(dpid) - 4
+        for dpid in dpids
+        if dpid.isdigit() and 5 <= int(dpid) <= 20
+    )
+    has_energy_output_controls = bool(
+        coordinator.classification.is_energy_storage
+        and BITMASK_DPID in dpids
+        and energy_output_numbers
+    )
+    has_light_power_memory = bool(
+        coordinator.classification.is_light and LIGHT_POWER_MEMORY_DPID in dpids
+    )
+
+    if not (
+        coordinator.classification.supports_switch_entities
+        or has_energy_output_controls
+        or has_light_power_memory
+        or (coordinator.classification.is_gateway and "2" in dpids)
+    ):
         _LOGGER.debug(
             "Device %s (Type: %s, Source: %s) does not support switch entities, "
             "skipping switch platform setup.",
@@ -62,10 +83,41 @@ async def async_setup_entry(
             for gang_bit in range(entity_count)
         )
 
-    dpids = supported_dpids(coordinator)
     if coordinator.classification.supports_plug_metering:
         if PLUG_OVERCURRENT_PROTECTION in dpids:
             entities.append(CozyLifePlugBooleanSwitch(coordinator))
+
+    if coordinator.classification.is_gateway and "2" in dpids:
+        entities.append(
+            CozyLifeDpidSwitch(
+                coordinator,
+                dpid="2",
+                key="discovery_mode",
+                name="Discovery mode",
+                entity_category=EntityCategory.CONFIG,
+            )
+        )
+
+    if has_light_power_memory:
+        entities.append(
+            CozyLifeDpidSwitch(
+                coordinator,
+                dpid=LIGHT_POWER_MEMORY_DPID,
+                key="power_off_memory",
+                name="Power-off memory",
+                entity_category=EntityCategory.CONFIG,
+            )
+        )
+
+    # The published energy-storage DPID table defines DPID 1 as a bitmask of
+    # output channels and DPIDs 5--20 as the matching branch-output telemetry.
+    # Only advertise a channel when that pairing is present on this actual
+    # model; a lone DPID-1 bitmask does not reveal how many outputs it has.
+    if has_energy_output_controls:
+        entities.extend(
+            CozyLifeEnergyOutputSwitch(coordinator, output_number)
+            for output_number in energy_output_numbers
+        )
 
     if entities:
         async_add_entities(entities)
@@ -162,6 +214,77 @@ class CozyLifeSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
         """Handle updated data from the coordinator."""
         self.async_write_ha_state()
 
+
+class CozyLifeEnergyOutputSwitch(CozyLifeSwitch):
+    """One documented output channel of a CozyLife power station."""
+
+    def __init__(
+        self,
+        coordinator: CozyLifeCoordinator,
+        output_number: int,
+    ) -> None:
+        """Initialize the switch for one DPID-1 output bit."""
+        super().__init__(
+            coordinator,
+            gang_bit=output_number - 1,
+            total_entities=2,
+        )
+        self._attr_name = f"Output {output_number}"
+        self._attr_unique_id = (
+            f"{coordinator.device.device_id}_energy_output_{output_number}"
+        )
+        self._attr_device_class = SwitchDeviceClass.OUTLET
+
+
+class CozyLifeDpidSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
+    """A documented boolean control represented by one DPID."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: CozyLifeCoordinator,
+        *,
+        dpid: str,
+        key: str,
+        name: str,
+        entity_category: EntityCategory | None = None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._dpid = dpid
+        self._attr_name = name
+        self._attr_unique_id = f"{coordinator.device.device_id}_{key}"
+        self._attr_entity_category = entity_category
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device.device_id)},
+            name=self.coordinator.device.device_model_name,
+            manufacturer="CozyLife",
+            model=self.coordinator.device.pid,
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        raw = self.coordinator.data.get(self._dpid)
+        if raw is None:
+            return None
+        return raw not in (0, "0", False, "off", "false")
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        if await self.coordinator.device.async_set_state({self._dpid: 1}):
+            self.coordinator.data[self._dpid] = 1
+            self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        if await self.coordinator.device.async_set_state({self._dpid: 0}):
+            self.coordinator.data[self._dpid] = 0
+            self.async_write_ha_state()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
 
 class CozyLifePlugBooleanSwitch(
     CoordinatorEntity[CozyLifeCoordinator],

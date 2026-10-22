@@ -17,6 +17,7 @@ from .const import (
     HUE,
     KNOWN_SENSOR_PIDS,
     LIGHT_TYPE_CODE,
+    PLUG_ADDED_ENERGY,
     PLUG_CURRENT,
     PLUG_ENERGY,
     PLUG_POWER,
@@ -35,7 +36,25 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 _MODEL_PATH = Path(__file__).with_name("model.json")
-_METERING_DPIDS = {PLUG_ENERGY, PLUG_CURRENT, PLUG_POWER, PLUG_VOLTAGE}
+_METERING_DPIDS = {
+    PLUG_ADDED_ENERGY,
+    PLUG_ENERGY,
+    PLUG_CURRENT,
+    PLUG_POWER,
+    PLUG_VOLTAGE,
+}
+# These two Wi-Fi AI-lamp PIDs use the recovered CozyLife panel
+# ``2026090516290000``. The catalog's generic AI DPID list is not the panel's
+# local control schema; the panel explicitly queries DPID 1 (power) and DPID
+# 4 (brightness) and sends those same IDs over the local bridge.
+_PANEL_LIGHT_DPIDS = {
+    "HFyhNc": frozenset({SWITCH, BRIGHT}),
+    "fBhCXl": frozenset({SWITCH, BRIGHT}),
+}
+# The downloaded S3 panel maps its five app-visible expressions to DPID 211.
+# The generic category-22 catalog lists only its shared AI service DPIDs, so
+# retain this panel-specific local control separately from those services.
+_PANEL_AI_EXPRESSION_DPIDS = {"Eklp7l": frozenset({"211"})}
 _SWITCH_GANG_DPIDS = ("2", "4", "6", "8", "10", "12", "14", "16")
 _NAMED_GANG_COUNTS = {
     "one": 1,
@@ -61,7 +80,11 @@ _NAMED_GANG_COUNTS = {
 # depend on a platform module.
 LOCAL_BINARY_SENSOR_PIDS = frozenset(
     {
-        "kOTYxo", "0iDvw9", "mBRflp", "GnOqhr", "t7x7Uz",  # contact
+        # ``o64g7o`` is named "ZigBee gate magnet", but its APK catalogue
+        # transport flag is Wi-Fi (``02``) and it shares the local DPID-7/9
+        # contact profile with these door magnets.
+        "kOTYxo", "o64g7o", "0iDvw9", "mBRflp", "GnOqhr", "t7x7Uz",
+        # contact
         "y9DaDw",  # water leak
     }
 )
@@ -95,6 +118,13 @@ class DeviceClassification:
     is_outlet: bool
     is_generic_power_device: bool
     is_known_motor: bool
+    is_fan: bool
+    is_energy_storage: bool
+    is_multi_sensor: bool
+    is_gateway: bool
+    is_video_intercom: bool
+    is_speaker: bool
+    is_ai_expression_device: bool
     supports_switch_entities: bool
     supports_plug_metering: bool
     switch_entity_count: int
@@ -125,6 +155,7 @@ def _load_model_catalog() -> dict[str, ModelInfo]:
             if not product_id:
                 continue
 
+            catalog_dpids = frozenset(str(dpid) for dpid in model.get("dpid", []))
             catalog[str(product_id)] = ModelInfo(
                 product_id=str(product_id),
                 type_code=type_code,
@@ -135,7 +166,11 @@ def _load_model_catalog() -> dict[str, ModelInfo]:
                     or model.get("device_model_name")
                     or model.get("n")
                 ),
-                dpids=frozenset(str(dpid) for dpid in model.get("dpid", [])),
+                dpids=(
+                    catalog_dpids
+                    | _PANEL_LIGHT_DPIDS.get(str(product_id), frozenset())
+                    | _PANEL_AI_EXPRESSION_DPIDS.get(str(product_id), frozenset())
+                ),
             )
 
     return catalog
@@ -214,6 +249,11 @@ def classify_device(
 ) -> DeviceClassification:
     """Classify a CozyLife device once so platforms do not disagree."""
     dpid_set = {str(dpid) for dpid in (dpids or [])}
+    # Generic category-22 catalog DPID lists omit the controls recovered from
+    # the corresponding downloadable panel.  Keep those narrow, panel-backed
+    # overrides available even when the caller only has an announcement list.
+    dpid_set |= _PANEL_LIGHT_DPIDS.get(pid or "", frozenset())
+    dpid_set |= _PANEL_AI_EXPRESSION_DPIDS.get(pid or "", frozenset())
     model_info = get_model_info(pid)
     model_name = model_info.model_name if model_info else None
 
@@ -255,7 +295,16 @@ def classify_device(
     is_known_motor = bool(model_info and model_info.type_name.lower() == "motor")
     is_sensor_category = bool(model_info and model_info.type_name.lower() == "sensor")
     is_outlet = False
-    is_generic_power_device = False
+    # Every APK-catalogued Wi-Fi home appliance exposes DPID 1 as the vendor
+    # ``switch_power`` control.  Keep this distinct from electrical outlets:
+    # Home Assistant should show a generic switch rather than falsely calling
+    # a heater, humidifier, kettle, disposer, or doorbell an outlet.
+    is_generic_power_device = bool(
+        model_info
+        and model_info.network_type == "02"
+        and model_info.type_code == "05"
+        and SWITCH in dpid_set
+    )
     has_light_capability = (
         TEMP in dpid_set
         or BRIGHT in dpid_set
@@ -270,6 +319,7 @@ def classify_device(
         and SWITCH in dpid_set
         and (
             effective_type_code == LIGHT_TYPE_CODE
+            or pid in _PANEL_LIGHT_DPIDS
             or (
                 not model_info
                 and device_type_code == RGB_LIGHT_TYPE_CODE
@@ -289,7 +339,59 @@ def classify_device(
         and SWITCH in dpid_set
         and not is_known_motor
         and not (is_light and has_light_capability)
-        and is_switch
+        and (is_switch or is_generic_power_device)
+    )
+    # The APK catalogue identifies these as Wi-Fi motors and the vendor DPID
+    # table defines their relay, speed, and wind-mode controls.  They need the
+    # native fan platform rather than being mistaken for a multi-gang relay.
+    is_fan = is_local_transport and is_known_motor and SWITCH in dpid_set
+    is_energy_storage = bool(
+        model_info
+        and model_info.network_type == "02"
+        and model_info.type_code == "06"
+        and bool({"3", "4"} & dpid_set)
+    )
+    is_multi_sensor = bool(
+        model_info
+        and model_info.network_type == "02"
+        and model_info.type_code == SENSOR_TYPE_CODE
+        and {"4", "6", "7", "8"} <= dpid_set
+    )
+    is_gateway = bool(
+        model_info
+        and model_info.network_type == "02"
+        and model_info.type_code == "08"
+        and "2" in dpid_set
+    )
+    normalized_name = (model_name or "").lower()
+    has_video_state_profile = {"101", "102", "110", "112"} <= dpid_set
+    is_video_intercom = bool(
+        model_info
+        and model_info.network_type == "02"
+        and model_info.type_code == "11"
+        and "101" in dpid_set
+        and (
+            "intercom" in normalized_name
+            or "doorbell" in normalized_name
+            or "门铃" in (model_name or "")
+            or has_video_state_profile
+        )
+    )
+    # The APK catalog contains two Wi-Fi X7 smart-speaker profiles. Their
+    # downloaded CozyLife panel verifies the local power, playback, volume,
+    # and source controls, so use the media-player platform rather than
+    # treating them as generic switches or voice assistants.
+    is_speaker = bool(
+        model_info
+        and model_info.network_type == "02"
+        and model_info.type_code == "23"
+        and SWITCH in dpid_set
+    )
+    is_ai_expression_device = bool(
+        model_info
+        and model_info.network_type == "02"
+        and pid in _PANEL_AI_EXPRESSION_DPIDS
+        and "211" in dpid_set
     )
     switch_entity_count = (
         detect_switch_entity_count(dpid_set, model_name)
@@ -315,6 +417,13 @@ def classify_device(
         is_outlet=is_outlet,
         is_generic_power_device=is_generic_power_device,
         is_known_motor=is_known_motor,
+        is_fan=is_fan,
+        is_energy_storage=is_energy_storage,
+        is_multi_sensor=is_multi_sensor,
+        is_gateway=is_gateway,
+        is_video_intercom=is_video_intercom,
+        is_speaker=is_speaker,
+        is_ai_expression_device=is_ai_expression_device,
         supports_switch_entities=supports_switch_entities,
         supports_plug_metering=supports_plug_metering,
         switch_entity_count=switch_entity_count,
@@ -329,6 +438,13 @@ def supports_local_entities(
     return bool(
         classification.is_environment_sensor
         or classification.is_light
+        or classification.is_fan
+        or classification.is_energy_storage
+        or classification.is_multi_sensor
+        or classification.is_gateway
+        or classification.is_video_intercom
+        or classification.is_speaker
+        or classification.is_ai_expression_device
         or classification.supports_switch_entities
         or pid in LOCAL_BINARY_SENSOR_PIDS
     )
