@@ -18,6 +18,7 @@ meaning and a safe Home Assistant entity mapping.
 | Gateway | Documented discovery-mode configuration switch | APK catalogue and `gateway_en.md` |
 | Video intercom/doorbell | Reported active-call, battery, low-battery, and motion state when the documented video profile is advertised | CozyLife video project and `doorbell_en.md` |
 | Smart speaker | X7 power, volume, play/pause, and Bluetooth/local/line-in source selection | Downloaded CozyLife X7 panel |
+| AI lamp | On/off and brightness for the two Wi-Fi AI-lamp profiles | Downloaded CozyLife AI-lamp panel |
 
 ## Deliberately not guessed
 
@@ -30,7 +31,8 @@ meaning and a safe Home Assistant entity mapping.
   as a call-state event for the video protocol, not as an unlock command.
   Lock actuation and video streaming stay out of scope until their local
   encrypted/session protocol is independently verified.
-- AI conversation products remain in the evidence-gathering queue. Their
+- AI conversation products, other than the two mapped AI-lamp profiles,
+  remain in the evidence-gathering queue. Their
   201--203 DPID controls are not mapped in the APK resources or CozyLife's
   published DPID documentation yet. Once recovered from their panel source,
   the integration will add only entities that match verified local behavior.
@@ -56,10 +58,10 @@ are still opaque:
 - DIY: all three Wi-Fi profiles expose only opaque DPID-51 JSON.
 - Smart speaker (2): both Wi-Fi X7 profiles have APK-panel-backed local media
   players. Power, volume, play/pause, and source selection are exposed.
-- AI conversation (32): the controls remain in the evidence queue. Their
-  panel services are downloaded from the CozyLife API, and the packaged APK
-  has only the service IDs and DPID lists; no local entity is invented until
-  that panel source is obtained and traced.
+- AI conversation (32): two AI-lamp profiles have panel-verified local light
+  controls. The remaining conversational controls stay in the evidence queue:
+  their panel services are downloaded from the CozyLife API, and no local
+  entity is invented until that panel source is obtained and traced.
 - Outdoor travel has no Wi-Fi profiles in this APK catalogue.
 
 ## Transport rule

@@ -43,6 +43,14 @@ _METERING_DPIDS = {
     PLUG_POWER,
     PLUG_VOLTAGE,
 }
+# These two Wi-Fi AI-lamp PIDs use the recovered CozyLife panel
+# ``2026090516290000``. The catalog's generic AI DPID list is not the panel's
+# local control schema; the panel explicitly queries DPID 1 (power) and DPID
+# 4 (brightness) and sends those same IDs over the local bridge.
+_PANEL_LIGHT_DPIDS = {
+    "HFyhNc": frozenset({SWITCH, BRIGHT}),
+    "fBhCXl": frozenset({SWITCH, BRIGHT}),
+}
 _SWITCH_GANG_DPIDS = ("2", "4", "6", "8", "10", "12", "14", "16")
 _NAMED_GANG_COUNTS = {
     "one": 1,
@@ -138,6 +146,7 @@ def _load_model_catalog() -> dict[str, ModelInfo]:
             if not product_id:
                 continue
 
+            catalog_dpids = frozenset(str(dpid) for dpid in model.get("dpid", []))
             catalog[str(product_id)] = ModelInfo(
                 product_id=str(product_id),
                 type_code=type_code,
@@ -148,7 +157,9 @@ def _load_model_catalog() -> dict[str, ModelInfo]:
                     or model.get("device_model_name")
                     or model.get("n")
                 ),
-                dpids=frozenset(str(dpid) for dpid in model.get("dpid", [])),
+                dpids=catalog_dpids | _PANEL_LIGHT_DPIDS.get(
+                    str(product_id), frozenset()
+                ),
             )
 
     return catalog
@@ -227,6 +238,10 @@ def classify_device(
 ) -> DeviceClassification:
     """Classify a CozyLife device once so platforms do not disagree."""
     dpid_set = {str(dpid) for dpid in (dpids or [])}
+    # Generic category-22 catalog DPID lists omit the controls recovered from
+    # the corresponding downloadable panel.  Keep those narrow, panel-backed
+    # overrides available even when the caller only has an announcement list.
+    dpid_set |= _PANEL_LIGHT_DPIDS.get(pid or "", frozenset())
     model_info = get_model_info(pid)
     model_name = model_info.model_name if model_info else None
 
@@ -292,6 +307,7 @@ def classify_device(
         and SWITCH in dpid_set
         and (
             effective_type_code == LIGHT_TYPE_CODE
+            or pid in _PANEL_LIGHT_DPIDS
             or (
                 not model_info
                 and device_type_code == RGB_LIGHT_TYPE_CODE

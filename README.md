@@ -29,7 +29,7 @@
 
 **CozyLife Local is stable for the device families that have been confirmed through local validation and field reports.**
 
-Confirmed support currently includes multi-gang wall switches, dimmable and color-capable lights, sleeping temperature/humidity sensors, standard smart plugs, power-metered outlets, and the APK-catalogued Wi-Fi X7 speakers. Physical device specifications still vary by manufacturer and model layout, so unconfirmed CozyLife devices may need catalog or DPID adjustments.
+Confirmed support currently includes multi-gang wall switches, dimmable and color-capable lights (including two APK-panel-verified AI lamps), sleeping temperature/humidity sensors, standard smart plugs, power-metered outlets, and the APK-catalogued Wi-Fi X7 speakers. Physical device specifications still vary by manufacturer and model layout, so unconfirmed CozyLife devices may need catalog or DPID adjustments.
 
 We are still looking for reports to expand coverage for:
 

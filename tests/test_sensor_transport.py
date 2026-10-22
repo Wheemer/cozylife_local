@@ -938,6 +938,7 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     video_intercom = classify_device("wmX4pg", "11", ["101"])
     door_lock = classify_device("XxxGn1", "11", ["101"])
     speaker = classify_device("GriFPh", "23", ["1", "2", "3", "4", "5", "6"])
+    ai_lamp = classify_device("HFyhNc", "22", ["201", "0"])
 
     assert known_light.is_light
     assert not catalog_only_light.is_light
@@ -959,6 +960,7 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     assert video_intercom.is_video_intercom
     assert not door_lock.is_video_intercom
     assert speaker.is_speaker
+    assert ai_lamp.is_light
 
 
 def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:
@@ -1092,6 +1094,18 @@ def test_all_catalogued_wifi_speakers_get_a_media_player() -> None:
             model.product_id, model.type_code, model.dpids
         )
         assert classification.is_speaker, model.product_id
+
+
+def test_recovered_ai_lamp_panel_adds_its_verified_local_dpids() -> None:
+    """AI lamp profiles use the recovered panel's DPID 1/4 control map."""
+    _load_api()
+    from cozylife_local.discovery import classify_device, get_model_info
+
+    for pid in ("HFyhNc", "fBhCXl"):
+        model = get_model_info(pid)
+        assert model is not None
+        assert {"1", "4"} <= model.dpids
+        assert classify_device(pid, model.type_code, model.dpids).is_light
 
 
 def test_powered_device_accepts_apk_style_async_state_report() -> None:
