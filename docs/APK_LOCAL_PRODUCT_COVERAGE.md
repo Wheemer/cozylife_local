@@ -29,9 +29,11 @@ meaning and a safe Home Assistant entity mapping.
   as a call-state event for the video protocol, not as an unlock command.
   Lock actuation and video streaming stay out of scope until their local
   encrypted/session protocol is independently verified.
-- Voice/AI and speaker products are not mapped to generic media or assistant
-  entities. Their 201--203 and 1--25 DPID sets have no verified local entity
-  semantics in the APK resources or CozyLife's published DPID documentation.
+- Voice/AI and speaker products remain in the evidence-gathering queue. Their
+  201--203 and 1--25 DPID sets have no verified local entity semantics in the
+  APK resources or CozyLife's published DPID documentation yet. Once those
+  controls are mapped, the integration will add only entities that match the
+  verified local behavior.
 
 ## Transport rule
 
