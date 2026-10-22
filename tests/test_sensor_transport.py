@@ -932,6 +932,7 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     bluetooth_environment_sensor = classify_device("bQ2cGF", "03", ["4", "8", "9"])
     appliance = classify_device("CJjAvl", "05", ["1"])
     tower_fan = classify_device("blEGaW", "02", ["1", "4", "9", "10", "11"])
+    power_station = classify_device("h70fk5", "06", ["1", "2", "3", "4", "21"])
 
     assert known_light.is_light
     assert not catalog_only_light.is_light
@@ -947,6 +948,7 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     assert appliance.is_generic_power_device
     assert appliance.supports_switch_entities
     assert tower_fan.is_fan
+    assert power_station.is_energy_storage
 
 
 def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:
@@ -1020,6 +1022,28 @@ def test_all_catalogued_wifi_appliances_with_power_dpid_get_a_switch() -> None:
         if "1" in model.dpids:
             assert classification.is_generic_power_device, model.product_id
             assert classification.supports_switch_entities, model.product_id
+
+
+def test_catalogued_wifi_energy_profiles_with_telemetry_get_local_entities() -> None:
+    """Recognize every APK Wi-Fi power-station profile with defined telemetry."""
+    _load_api()
+    from cozylife_local.discovery import _load_model_catalog, classify_device
+
+    energy_models = [
+        model
+        for model in _load_model_catalog().values()
+        if model.type_code == "06" and model.network_type == "02"
+    ]
+    assert energy_models
+
+    for model in energy_models:
+        classification = classify_device(
+            model.product_id,
+            model.type_code,
+            model.dpids,
+        )
+        if {"3", "4"} & model.dpids:
+            assert classification.is_energy_storage, model.product_id
 
 
 def test_manual_sensor_choices_include_only_apk_wifi_profiles() -> None:

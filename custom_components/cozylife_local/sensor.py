@@ -17,6 +17,7 @@ from homeassistant.const import (
     UnitOfEnergy,
     UnitOfPower,
     UnitOfTemperature,
+    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
@@ -105,6 +106,64 @@ async def async_setup_entry(
             if description.dpid in dpids
         )
 
+    if coordinator.classification.is_energy_storage:
+        energy_sensor_descriptions = [
+            PlugSensorDescription(
+                dpid="3",
+                key="battery_level",
+                name="Battery",
+                device_class=SensorDeviceClass.BATTERY,
+                state_class=SensorStateClass.MEASUREMENT,
+                native_unit_of_measurement=PERCENTAGE,
+            ),
+            PlugSensorDescription(
+                dpid="4",
+                key="total_output_power",
+                name="Total output power",
+                device_class=SensorDeviceClass.POWER,
+                state_class=SensorStateClass.MEASUREMENT,
+                native_unit_of_measurement=UnitOfPower.WATT,
+            ),
+            PlugSensorDescription(
+                dpid="21",
+                key="total_input_power",
+                name="Total input power",
+                device_class=SensorDeviceClass.POWER,
+                state_class=SensorStateClass.MEASUREMENT,
+                native_unit_of_measurement=UnitOfPower.WATT,
+            ),
+            PlugSensorDescription(
+                dpid="30",
+                key="remaining_usable_time",
+                name="Remaining usable time",
+                device_class=SensorDeviceClass.DURATION,
+                state_class=SensorStateClass.MEASUREMENT,
+                native_unit_of_measurement=UnitOfTime.MINUTES,
+            ),
+            PlugSensorDescription(
+                dpid="31",
+                key="remaining_charging_time",
+                name="Remaining charging time",
+                device_class=SensorDeviceClass.DURATION,
+                state_class=SensorStateClass.MEASUREMENT,
+                native_unit_of_measurement=UnitOfTime.MINUTES,
+            ),
+            PlugSensorDescription(
+                dpid="32",
+                key="battery_temperature",
+                name="Battery temperature",
+                device_class=SensorDeviceClass.TEMPERATURE,
+                state_class=SensorStateClass.MEASUREMENT,
+                native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+                offset=-273,
+            ),
+        ]
+        entities.extend(
+            CozyLifePlugSensor(coordinator, description)
+            for description in energy_sensor_descriptions
+            if description.dpid in dpids
+        )
+
     if not entities:
         _LOGGER.debug(
             f"Device {coordinator.device.ip_address} has no supported sensor DPIDs, skipping sensor platform setup."
@@ -126,6 +185,7 @@ class PlugSensorDescription:
         state_class: SensorStateClass | None,
         native_unit_of_measurement: str | None,
         scale: int = 1,
+        offset: float = 0,
         entity_category: EntityCategory | None = None,
     ) -> None:
         self.dpid = dpid
@@ -135,6 +195,7 @@ class PlugSensorDescription:
         self.state_class = state_class
         self.native_unit_of_measurement = native_unit_of_measurement
         self.scale = scale
+        self.offset = offset
         self.entity_category = entity_category
 
 
@@ -311,7 +372,7 @@ class CozyLifePlugSensor(CoordinatorEntity[CozyLifeCoordinator], SensorEntity):
         if raw is None:
             return None
 
-        value = raw / self._description.scale
+        value = raw / self._description.scale + self._description.offset
         if self._description.scale == 1:
             return float(value)
         return round(value, 3)
