@@ -27,6 +27,14 @@ def _refresh_debug_logging(hass: HomeAssistant) -> None:
     )
 
 
+def _remove_debug_entry(hass: HomeAssistant, entry_id: str) -> None:
+    """Drop one entry's debug opt-in and update the package logger."""
+    debug_entry_ids = hass.data.get(DOMAIN, {}).get(_DEBUG_ENTRY_IDS)
+    if isinstance(debug_entry_ids, set):
+        debug_entry_ids.discard(entry_id)
+    _refresh_debug_logging(hass)
+
+
 async def _async_ensure_discovery_controller(hass: HomeAssistant) -> None:
     """Add the shared discovery controller when upgrading device-only setups.
 
@@ -208,6 +216,7 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if entry.data.get("entry_type") == DISCOVERY_CONTROLLER_ENTRY_TYPE:
+        _remove_debug_entry(hass, entry.entry_id)
         return True
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -219,9 +228,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             service.unregister_device(coordinator.device.device_id, entry.entry_id)
             service.unregister_address(entry.data.get("ip_address", ""))
         await coordinator.async_close()
-        debug_entry_ids = hass.data[DOMAIN].get(_DEBUG_ENTRY_IDS)
-        if isinstance(debug_entry_ids, set):
-            debug_entry_ids.discard(entry.entry_id)
-        _refresh_debug_logging(hass)
+        _remove_debug_entry(hass, entry.entry_id)
 
     return unload_ok
