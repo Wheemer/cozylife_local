@@ -18,6 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # The DPID used for controlling all switch/outlet gangs via a bitmask.
 BITMASK_DPID = "1"
+LIGHT_POWER_MEMORY_DPID = "9"
 
 
 async def async_setup_entry(
@@ -43,10 +44,14 @@ async def async_setup_entry(
         and BITMASK_DPID in dpids
         and energy_output_numbers
     )
+    has_light_power_memory = bool(
+        coordinator.classification.is_light and LIGHT_POWER_MEMORY_DPID in dpids
+    )
 
     if not (
         coordinator.classification.supports_switch_entities
         or has_energy_output_controls
+        or has_light_power_memory
         or (coordinator.classification.is_gateway and "2" in dpids)
     ):
         _LOGGER.debug(
@@ -89,6 +94,17 @@ async def async_setup_entry(
                 dpid="2",
                 key="discovery_mode",
                 name="Discovery mode",
+                entity_category=EntityCategory.CONFIG,
+            )
+        )
+
+    if has_light_power_memory:
+        entities.append(
+            CozyLifeDpidSwitch(
+                coordinator,
+                dpid=LIGHT_POWER_MEMORY_DPID,
+                key="power_off_memory",
+                name="Power-off memory",
                 entity_category=EntityCategory.CONFIG,
             )
         )

@@ -10,7 +10,7 @@ meaning and a safe Home Assistant entity mapping.
 | APK family | Local entity coverage | Evidence |
 | --- | --- | --- |
 | Electrical | Relay/outlet switching, metering, and documented plug options | APK catalogue and `electrician_en.md` |
-| Light | On/off, brightness, colour, colour temperature, modes, and documented options | APK light transport and `light_en.md` |
+| Light | On/off, brightness, colour, colour temperature, countdown, and power-off-memory configuration when advertised | APK light transport and `light_en.md` |
 | Motor | Native fan power, documented percentage/gear speeds, and wind modes | APK catalogue and `motor_en.md` |
 | Sensor | Temperature, humidity, battery, contact, water leak, and the Wi-Fi multi-sensor's motion/contact profile | APK catalogue and `sensor_en.md` |
 | Home appliance | Documented DPID-1 `switch_power` as a generic switch | APK catalogue and `appliance_en.md` |
