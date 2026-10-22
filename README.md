@@ -2,7 +2,7 @@
 
 [![HACS Default](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/hacs/default)
 [![GitHub Release](https://img.shields.io/github/release/soulripper13/cozylife_local.svg?style=for-the-badge)](https://github.com/soulripper13/cozylife_local/releases)
-[![GitHub License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+[![GitHub License](https://img.shields.io/github/license/soulripper13/cozylife_local.png?style=for-the-badge)](https://github.com/soulripper13/cozylife_local/blob/main/LICENSE)
 [![GitHub Issues](https://img.shields.io/github/issues/soulripper13/cozylife_local.svg?style=for-the-badge)](https://github.com/soulripper13/cozylife_local/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/soulripper13/cozylife_local?style=for-the-badge&logo=github)](https://github.com/soulripper13/cozylife_local/stargazers)
 ![Maintenance](https://img.shields.io/maintenance/yes/2026.svg?style=for-the-badge)
@@ -10,7 +10,7 @@
 [![Support via PayPal](https://img.shields.io/badge/Support-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/SKatoaroo)
 
 <div align="center">
-  <img src="assets/hero_banner.jpeg" alt="CozyLife Local Hero Banner" width="100%">
+  <img src="https://raw.githubusercontent.com/soulripper13/cozylife_local/main/assets/hero_banner.jpeg" alt="CozyLife Local Hero Banner" width="100%">
   <br><br>
   <strong>A premium, 100% local Home Assistant integration for CozyLife smart devices. Control your switches, lights, smart plugs, and environment sensors securely without any cloud dependency.</strong> 
   <br><br> 
@@ -27,9 +27,9 @@
 
 ## Stable Device Support
 
-**CozyLife Local is stable for the device families that have been confirmed through local validation and field reports.**
+**CozyLife Local provides local support for the device profiles confirmed through APK analysis, local validation, and field reports.**
 
-Confirmed support currently includes multi-gang wall switches, dimmable and color-capable lights (including two APK-panel-verified AI lamps), sleeping temperature/humidity sensors, standard smart plugs, power-metered outlets, and the APK-catalogued Wi-Fi X7 speakers. Physical device specifications still vary by manufacturer and model layout, so unconfirmed CozyLife devices may need catalog or DPID adjustments.
+Covered profiles currently include multi-gang wall switches, dimmable and color-capable lights (including two APK-panel-verified AI lamps), sleeping temperature/humidity sensors, TCP/5555-capable plugs and outlets with optional power metering, and the APK-catalogued Wi-Fi X7 speakers. Physical device specifications still vary by manufacturer and model layout; a UDP-announcing device must also accept the documented local TCP/5555 protocol before its entities can be available.
 
 We are still looking for reports to expand coverage for:
 
@@ -46,7 +46,8 @@ We are still looking for reports to expand coverage for:
 ## Key Features
 
 *   ⚡ **100% Local Control**: Zero reliance on the CozyLife cloud. All control commands and sensor status requests happen locally over your Wi-Fi network.
-*   🔌 **Automatic Local Discovery**: One submitted CozyLife Local entry runs a shared UDP/6095 listener using the app's `cmd:0` discovery frames every 500 ms, so short sleeping-sensor wake windows can be caught. Home Assistant presents each newly announced device through its normal discovered-device card.
+*   🔌 **Automatic Local Discovery**: One submitted CozyLife Local entry runs a shared UDP/6095 listener and sends APK-style `cmd:0` discovery broadcasts every 10 seconds. Home Assistant presents each newly announced device through its normal discovered-device card.
+*   ⏱️ **Sleeping Sensor Wake Windows**: Supported sleeping temperature/humidity sensors use separate local status probes every 500 ms; this is independent of UDP discovery and avoids assuming a fixed reporting schedule.
 *   📍 **Resilient Local Addressing**: Each device exposes its local IP diagnostically, and the shared listener refreshes known device addresses from APK-style announcements.
 *   🧭 **Visible Device IP Diagnostics**: Exposes each configured device's local IP address as a diagnostic sensor in Home Assistant, making router checks and troubleshooting easier.
 *   🎛️ **Multi-Gang Switch Bitmasks**: Native, low-level bitmask control on DPID 1 ensures multi-gang rockers (e.g., double or triple rocker switches) act as individual, responsive entities.
