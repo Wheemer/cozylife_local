@@ -347,9 +347,12 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for dpid in ENVIRONMENT_SENSOR_MEASUREMENTS
         )
 
-    async def _async_get_environment_state(self) -> dict[str, Any]:
-        """Request state with the APK's local device-status payload."""
-        state_data = await self.device.async_get_status()
+    async def _async_get_local_state(self) -> dict[str, Any]:
+        """Request the APK state payload appropriate for this device family."""
+        if self._uses_sensor_polling:
+            state_data = await self.device.async_get_status()
+        else:
+            state_data = await self.device.async_get_properties()
         if state_data is None:
             raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
         return state_data
@@ -365,7 +368,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     f"Failed to get full device info for {self.device.ip_address}"
                 )
 
-            state_data = await self._async_get_environment_state()
+            state_data = await self._async_get_local_state()
             if (
                 getattr(self, "_entry", None)
                 and self._entry.data.get("ip_address") != self.device.ip_address
@@ -375,8 +378,9 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     data={**self._entry.data, "ip_address": self.device.ip_address},
                 )
 
-            # CMD 2 / attr:[1] is the APK complete local status request.
-            # Do not synthesize extra per-DPID reads that the APK does not send.
+            # The APK uses attr:[1] for sensor status and attr:[0] for the
+            # complete property state of powered products. Do not synthesize
+            # per-DPID reads the APK does not send.
             state_data = self._preserve_environment_measurements(state_data)
             _LOGGER.debug(f"[COZYLIFE] Successfully fetched state for {self.device.ip_address}: {state_data}")
             return state_data

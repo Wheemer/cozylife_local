@@ -884,6 +884,38 @@ def test_state_query_accepts_apk_local_reply_with_a_different_sn() -> None:
     asyncio.run(exercise())
 
 
+def test_powered_property_query_uses_apk_complete_property_frame() -> None:
+    """Powered products request attr:[0], as the APK property path does."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        async def handler(reader, writer) -> None:
+            request = json.loads((await reader.readline()).decode())
+            assert request["cmd"] == 2
+            assert request["msg"] == {"attr": [0]}
+            writer.write(
+                (json.dumps({
+                    "cmd": 2,
+                    "sn": "full-property-event",
+                    "msg": {"data": {"1": True, "4": 50}},
+                }) + "\r\n").encode()
+            )
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handler, "127.0.0.1", 5555)
+        device = CozyLifeDevice("127.0.0.1", timeout=1.0)
+        try:
+            assert await device.async_get_properties() == {"1": True, "4": 50}
+        finally:
+            await device.async_close()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
 def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     """Do not expose catalog-only lights or non-Wi-Fi sensors as local devices."""
     _load_api()

@@ -367,11 +367,21 @@ class CozyLifeDevice:
 
     async def async_get_status(self) -> Optional[Dict[str, Any]]:
         """Request APK status and await the next state frame, not a matching SN."""
+        return await self._async_get_state([1])
+
+    async def async_get_properties(self) -> Optional[Dict[str, Any]]:
+        """Request the APK's complete local property payload for a powered device."""
+        return await self._async_get_state([0])
+
+    async def _async_get_state(self, attributes: list[int]) -> Optional[Dict[str, Any]]:
+        """Request the selected APK state payload and await its state frame."""
         if self._status_lock is None:
             self._status_lock = asyncio.Lock()
 
         async with self._status_lock:
-            return await self._async_request_status(wait_for_state=True)
+            return await self._async_request_state(
+                attributes, wait_for_state=True
+            )
 
     async def async_send_status(self) -> bool:
         """Write the APK status request without requiring an accepted reply."""
@@ -379,14 +389,17 @@ class CozyLifeDevice:
             self._status_lock = asyncio.Lock()
 
         async with self._status_lock:
-            return (await self._async_request_status(wait_for_state=False)) is not None
+            return (
+                await self._async_request_state([1], wait_for_state=False)
+            ) is not None
 
-    async def _async_request_status(
+    async def _async_request_state(
         self,
+        attributes: list[int],
         *,
         wait_for_state: bool,
     ) -> Optional[Dict[str, Any]]:
-        """Use the APK write-and-listen status path over one durable socket."""
+        """Use the APK write-and-listen state path over one durable socket."""
         try:
             await self._connect()
             writer = self._writer
@@ -398,7 +411,7 @@ class CozyLifeDevice:
                 state_waiter = asyncio.get_running_loop().create_future()
                 self._state_waiters.append(state_waiter)
 
-            message = self._create_message(CMD_QUERY, {"attr": [1]})
+            message = self._create_message(CMD_QUERY, {"attr": attributes})
             encoded_message = (
                 json.dumps(message, separators=(",", ":")) + "\r\n"
             ).encode("utf8")
