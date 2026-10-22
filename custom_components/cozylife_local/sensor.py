@@ -108,6 +108,15 @@ async def async_setup_entry(
     if coordinator.classification.is_energy_storage:
         energy_sensor_descriptions = [
             PlugSensorDescription(
+                dpid="2",
+                key="battery_status",
+                name="Battery status",
+                device_class=None,
+                state_class=None,
+                native_unit_of_measurement=None,
+                entity_category=EntityCategory.DIAGNOSTIC,
+            ),
+            PlugSensorDescription(
                 dpid="3",
                 key="battery_level",
                 name="Battery",
@@ -123,6 +132,17 @@ async def async_setup_entry(
                 state_class=SensorStateClass.MEASUREMENT,
                 native_unit_of_measurement=UnitOfPower.WATT,
             ),
+            *[
+                PlugSensorDescription(
+                    dpid=str(dpid),
+                    key=f"output_{dpid - 4}_power",
+                    name=f"Output {dpid - 4} power",
+                    device_class=SensorDeviceClass.POWER,
+                    state_class=SensorStateClass.MEASUREMENT,
+                    native_unit_of_measurement=UnitOfPower.WATT,
+                )
+                for dpid in range(5, 21)
+            ],
             PlugSensorDescription(
                 dpid="21",
                 key="total_input_power",
@@ -131,6 +151,17 @@ async def async_setup_entry(
                 state_class=SensorStateClass.MEASUREMENT,
                 native_unit_of_measurement=UnitOfPower.WATT,
             ),
+            *[
+                PlugSensorDescription(
+                    dpid=str(dpid),
+                    key=f"input_{dpid - 21}_power",
+                    name=f"Input {dpid - 21} power",
+                    device_class=SensorDeviceClass.POWER,
+                    state_class=SensorStateClass.MEASUREMENT,
+                    native_unit_of_measurement=UnitOfPower.WATT,
+                )
+                for dpid in range(22, 30)
+            ],
             PlugSensorDescription(
                 dpid="30",
                 key="remaining_usable_time",
@@ -155,6 +186,15 @@ async def async_setup_entry(
                 state_class=SensorStateClass.MEASUREMENT,
                 native_unit_of_measurement=UnitOfTemperature.CELSIUS,
                 offset=-273,
+            ),
+            PlugSensorDescription(
+                dpid="44",
+                key="fault_code",
+                name="Fault code",
+                device_class=None,
+                state_class=None,
+                native_unit_of_measurement=None,
+                entity_category=EntityCategory.DIAGNOSTIC,
             ),
         ]
         entities.extend(

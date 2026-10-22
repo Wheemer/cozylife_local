@@ -1061,7 +1061,7 @@ def test_catalogued_wifi_energy_profiles_with_telemetry_get_local_entities() -> 
 
 
 def test_energy_output_channels_require_the_documented_telemetry_pairing() -> None:
-    """Only power stations with branch telemetry get DPID-1 output switches."""
+    """Full power stations retain their documented branch telemetry profile."""
     _load_api()
     from cozylife_local.discovery import _load_model_catalog
 
@@ -1077,6 +1077,12 @@ def test_energy_output_channels_require_the_documented_telemetry_pairing() -> No
         if "1" in model.dpids and branch_dpids <= model.dpids
     ]
     assert len(channelled_models) == 12
+    documented_input_dpids = {str(dpid) for dpid in range(22, 30)}
+    for model in channelled_models:
+        assert documented_input_dpids <= model.dpids, model.product_id
+        assert {"2", "3", "4", "21", "30", "31", "32", "44"} <= model.dpids, (
+            model.product_id
+        )
     assert {model.product_id for model in energy_models if model.dpids == {"1"}} == {
         "JTEnK3",
         "XZUWYv",
