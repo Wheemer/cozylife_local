@@ -67,6 +67,17 @@ async def async_setup_entry(
         if PLUG_OVERCURRENT_PROTECTION in dpids:
             entities.append(CozyLifePlugBooleanSwitch(coordinator))
 
+    if coordinator.classification.is_gateway and "2" in dpids:
+        entities.append(
+            CozyLifeDpidSwitch(
+                coordinator,
+                dpid="2",
+                key="discovery_mode",
+                name="Discovery mode",
+                entity_category=EntityCategory.CONFIG,
+            )
+        )
+
     if entities:
         async_add_entities(entities)
 
@@ -148,6 +159,57 @@ class CozyLifeSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
             # The next coordinator refresh will sync the state later.
         else:
             _LOGGER.debug(f"Switch {self.name} is already in the desired state.")
+
+
+class CozyLifeDpidSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
+    """A documented boolean control represented by one DPID."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: CozyLifeCoordinator,
+        *,
+        dpid: str,
+        key: str,
+        name: str,
+        entity_category: EntityCategory | None = None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._dpid = dpid
+        self._attr_name = name
+        self._attr_unique_id = f"{coordinator.device.device_id}_{key}"
+        self._attr_entity_category = entity_category
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device.device_id)},
+            name=self.coordinator.device.device_model_name,
+            manufacturer="CozyLife",
+            model=self.coordinator.device.pid,
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        raw = self.coordinator.data.get(self._dpid)
+        if raw is None:
+            return None
+        return raw not in (0, "0", False, "off", "false")
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        if await self.coordinator.device.async_set_state({self._dpid: 1}):
+            self.coordinator.data[self._dpid] = 1
+            self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        if await self.coordinator.device.async_set_state({self._dpid: 0}):
+            self.coordinator.data[self._dpid] = 0
+            self.async_write_ha_state()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn this specific switch gang on."""

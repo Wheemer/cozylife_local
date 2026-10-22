@@ -105,6 +105,7 @@ class DeviceClassification:
     is_fan: bool
     is_energy_storage: bool
     is_multi_sensor: bool
+    is_gateway: bool
     supports_switch_entities: bool
     supports_plug_metering: bool
     switch_entity_count: int
@@ -326,6 +327,12 @@ def classify_device(
         and model_info.type_code == SENSOR_TYPE_CODE
         and {"4", "6", "7", "8"} <= dpid_set
     )
+    is_gateway = bool(
+        model_info
+        and model_info.network_type == "02"
+        and model_info.type_code == "08"
+        and "2" in dpid_set
+    )
     switch_entity_count = (
         detect_switch_entity_count(dpid_set, model_name)
         if supports_switch_entities
@@ -353,6 +360,7 @@ def classify_device(
         is_fan=is_fan,
         is_energy_storage=is_energy_storage,
         is_multi_sensor=is_multi_sensor,
+        is_gateway=is_gateway,
         supports_switch_entities=supports_switch_entities,
         supports_plug_metering=supports_plug_metering,
         switch_entity_count=switch_entity_count,
@@ -370,6 +378,7 @@ def supports_local_entities(
         or classification.is_fan
         or classification.is_energy_storage
         or classification.is_multi_sensor
+        or classification.is_gateway
         or classification.supports_switch_entities
         or pid in LOCAL_BINARY_SENSOR_PIDS
     )
