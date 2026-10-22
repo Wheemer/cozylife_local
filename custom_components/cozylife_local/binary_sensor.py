@@ -79,6 +79,36 @@ def _binary_sensor_descriptions(
                 )
             )
 
+    # CozyLife's public video project documents these local intercom/doorbell
+    # reports. DPID 101 uses 1 for an active call and 2 for inactive, unlike
+    # the usual 0/1 binary convention.
+    if "101" in dpid_set and pid in {"wmX4pg", "TtzhrF", "LS5ZYq", "njzaOQ", "PDXXfS"}:
+        descriptions.append(
+            BinarySensorDescription(
+                dpid="101",
+                key="call_active",
+                name="Call active",
+                device_class=BinarySensorDeviceClass.OCCUPANCY,
+            )
+        )
+    if "103" in dpid_set and pid in {"oPGsQu", "YHoxOX", "bZOyOH", "I56w6F", "iaKiBX"}:
+        descriptions.append(
+            BinarySensorDescription(
+                dpid="103",
+                key="low_battery",
+                name="Low battery",
+                device_class=BinarySensorDeviceClass.BATTERY,
+            )
+        )
+    if "106" in dpid_set and pid in {"oPGsQu", "YHoxOX", "bZOyOH", "I56w6F", "iaKiBX"}:
+        descriptions.append(
+            BinarySensorDescription(
+                dpid="106",
+                key="motion",
+                name="Motion",
+                device_class=BinarySensorDeviceClass.MOTION,
+            )
+        )
     return descriptions
 
 
@@ -146,6 +176,8 @@ class CozyLifeBinarySensor(CoordinatorEntity[CozyLifeCoordinator], BinarySensorE
         raw = self.coordinator.data.get(self._description.dpid)
         if raw is None:
             return None
+        if self._description.key == "call_active":
+            return raw in (1, "1", True)
         return _coerce_binary_state(raw)
 
     @callback

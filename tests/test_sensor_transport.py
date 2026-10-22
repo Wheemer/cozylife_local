@@ -935,6 +935,8 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     power_station = classify_device("h70fk5", "06", ["1", "2", "3", "4", "21"])
     multi_sensor = classify_device("t8nvdb", "03", ["4", "6", "7", "8"])
     gateway = classify_device("v44j8s", "08", ["2"])
+    video_intercom = classify_device("wmX4pg", "11", ["101"])
+    door_lock = classify_device("XxxGn1", "11", ["101"])
 
     assert known_light.is_light
     assert not catalog_only_light.is_light
@@ -953,6 +955,8 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     assert power_station.is_energy_storage
     assert multi_sensor.is_multi_sensor
     assert gateway.is_gateway
+    assert video_intercom.is_video_intercom
+    assert not door_lock.is_video_intercom
 
 
 def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:

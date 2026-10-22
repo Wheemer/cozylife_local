@@ -163,6 +163,22 @@ async def async_setup_entry(
             if description.dpid in dpids
         )
 
+    if coordinator.classification.is_video_intercom and "102" in dpids:
+        entities.append(
+            CozyLifePlugSensor(
+                coordinator,
+                PlugSensorDescription(
+                    dpid="102",
+                    key="video_battery",
+                    name="Battery",
+                    device_class=SensorDeviceClass.BATTERY,
+                    state_class=SensorStateClass.MEASUREMENT,
+                    native_unit_of_measurement=PERCENTAGE,
+                    scale=10,
+                ),
+            )
+        )
+
     if not entities:
         _LOGGER.debug(
             f"Device {coordinator.device.ip_address} has no supported sensor DPIDs, skipping sensor platform setup."
