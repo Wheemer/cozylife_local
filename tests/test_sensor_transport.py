@@ -28,6 +28,24 @@ def _load_api():
     return CozyLifeDevice
 
 
+def test_connection_refusal_is_retained_for_diagnostics() -> None:
+    """A local refusal remains inspectable after the failed request returns."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        device = CozyLifeDevice("192.0.2.50", timeout=0.1)
+
+        async def refuse(*_args, **_kwargs):
+            raise ConnectionRefusedError(111, "Connection refused")
+
+        with patch("asyncio.open_connection", refuse):
+            assert await device.async_send_status() is False
+
+        assert device.last_transport_error == "ConnectionRefusedError: [Errno 111] Connection refused"
+
+    asyncio.run(exercise())
+
+
 def _load_coordinator():
     """Load coordinator logic with the minimal Home Assistant interfaces it uses."""
     _load_api()

@@ -45,6 +45,7 @@ class CozyLifeDevice:
         self._reader_task: Optional[asyncio.Task[None]] = None
         self._connection_lock: Optional[asyncio.Lock] = None
         self._status_lock: Optional[asyncio.Lock] = None
+        self._last_transport_error: Optional[str] = None
 
     @property
     def ip_address(self) -> str:
@@ -69,6 +70,16 @@ class CozyLifeDevice:
     @property
     def device_type_code(self) -> Optional[str]:
         return self._device_type_code
+
+    @property
+    def last_transport_error(self) -> Optional[str]:
+        """Return the latest local TCP failure for diagnostics."""
+        return self._last_transport_error
+
+    @property
+    def is_connected(self) -> bool:
+        """Return whether the persistent local TCP writer remains usable."""
+        return self._writer is not None and not self._writer.is_closing()
 
     def set_timeout(self, timeout: float) -> None:
         """Set the bounded duration for one local request attempt."""
@@ -126,6 +137,7 @@ class CozyLifeDevice:
                     timeout=self._timeout,
                 )
             except (asyncio.TimeoutError, ConnectionRefusedError, OSError) as err:
+                self._last_transport_error = f"{type(err).__name__}: {err}"
                 _RAW_LOGGER.debug(
                     "Could not open CozyLife socket to %s:%s: %r",
                     self._ip_address,
@@ -141,6 +153,7 @@ class CozyLifeDevice:
                 self._read_frames(reader, writer),
                 name=f"cozylife-reader-{self._ip_address}",
             )
+            self._last_transport_error = None
             _RAW_LOGGER.debug(
                 "Connected persistent CozyLife socket at %s:%s",
                 self._ip_address,
