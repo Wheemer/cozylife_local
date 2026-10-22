@@ -990,6 +990,46 @@ def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:
         assert required <= model.dpids, pid
 
 
+def test_discovery_eligibility_matches_the_supported_local_boundary() -> None:
+    """Do not let catalog presence turn deferred product families into entries."""
+    _load_api()
+    from cozylife_local.discovery import (
+        classify_device,
+        get_model_info,
+        supports_local_entities,
+    )
+
+    supported_pids = {
+        "hjk1jk",  # electrical socket
+        "asdlks",  # light
+        "blEGaW",  # fan
+        "CJjAvl",  # appliance
+        "h70fk5",  # power station
+        "Z4tRml",  # sleeping temperature/humidity sensor
+        "JTFMlo",  # temperature/humidity/motion sensor
+        "GriFPh",  # X7 speaker
+        "HFyhNc",  # panel-verified AI lamp
+        "Eklp7l",  # panel-verified AI companion expression
+    }
+    deferred_pids = {
+        "m0ldju",  # opaque DIY DPID-51 payload
+        "XxxGn1",  # lock/session protocol
+        "knAmlh",  # generic AI conversation profile
+    }
+
+    for pid in supported_pids:
+        model = get_model_info(pid)
+        assert model is not None, pid
+        classification = classify_device(pid, model.type_code, model.dpids)
+        assert supports_local_entities(pid, classification), pid
+
+    for pid in deferred_pids:
+        model = get_model_info(pid)
+        assert model is not None, pid
+        classification = classify_device(pid, model.type_code, model.dpids)
+        assert not supports_local_entities(pid, classification), pid
+
+
 def test_all_catalogued_wifi_electrical_relays_and_meters_get_local_entities() -> None:
     """Keep every APK Wi-Fi electrical relay on the supported local path."""
     _load_api()
