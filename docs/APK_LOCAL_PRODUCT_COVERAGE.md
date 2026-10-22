@@ -47,8 +47,9 @@ are still opaque:
   remaining profiles advertise no actionable DPID.
 - Lights (334), motors (4), and home appliances (7) have verified local
   entities.
-- Sensors: 14 of 15 Wi-Fi profiles have documented entities; the remaining
-  profile is labelled a Zigbee door magnet despite its catalogue network flag.
+- Sensors: all 15 Wi-Fi profiles have documented entities. One is labelled a
+  Zigbee door magnet, but the APK's authoritative transport flag is Wi-Fi and
+  it shares the documented local contact profile with the other door magnets.
 - Energy: 13 of 15 Wi-Fi profiles expose documented telemetry. The 12 full
   profiles that advertise branch-output power DPIDs also expose the matching
   DPID-1 output bits as local switches. The other two advertise only a

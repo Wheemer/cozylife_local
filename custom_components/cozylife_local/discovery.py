@@ -76,7 +76,11 @@ _NAMED_GANG_COUNTS = {
 # depend on a platform module.
 LOCAL_BINARY_SENSOR_PIDS = frozenset(
     {
-        "kOTYxo", "0iDvw9", "mBRflp", "GnOqhr", "t7x7Uz",  # contact
+        # ``o64g7o`` is named "ZigBee gate magnet", but its APK catalogue
+        # transport flag is Wi-Fi (``02``) and it shares the local DPID-7/9
+        # contact profile with these door magnets.
+        "kOTYxo", "o64g7o", "0iDvw9", "mBRflp", "GnOqhr", "t7x7Uz",
+        # contact
         "y9DaDw",  # water leak
     }
 )

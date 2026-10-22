@@ -1092,6 +1092,18 @@ def test_manual_sensor_choices_include_only_apk_wifi_profiles() -> None:
     assert "v2kv9f" not in pids
 
 
+def test_wifi_catalogue_flag_wins_over_misleading_contact_sensor_name() -> None:
+    """The Wi-Fi-labelled gate magnet is retained on the local contact path."""
+    _load_api()
+    from cozylife_local.discovery import LOCAL_BINARY_SENSOR_PIDS, get_model_info
+
+    model = get_model_info("o64g7o")
+    assert model is not None
+    assert model.network_type == "02"
+    assert {"7", "9"} <= model.dpids
+    assert model.product_id in LOCAL_BINARY_SENSOR_PIDS
+
+
 def test_platforms_exclude_home_assistant_schedule_emulation() -> None:
     """Keep scheduling in Home Assistant automations, not this integration."""
     _load_api()
