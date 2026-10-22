@@ -222,9 +222,15 @@ class CozyLifeDevice:
 
                 listener = self._message_listener
                 if listener is not None:
-                    result = listener(frame)
-                    if inspect.isawaitable(result):
-                        await result
+                    try:
+                        result = listener(frame)
+                        if inspect.isawaitable(result):
+                            await result
+                    except Exception:  # noqa: BLE001 - listener is integration code.
+                        _LOGGER.exception(
+                            "Error dispatching CozyLife frame from %s",
+                            self._ip_address,
+                        )
         except (ConnectionError, OSError) as err:
             _LOGGER.debug("Persistent connection to %s ended: %s", self._ip_address, err)
         finally:

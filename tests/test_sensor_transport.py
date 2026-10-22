@@ -371,6 +371,50 @@ def test_status_write_dispatches_a_delayed_report_without_waiting() -> None:
     asyncio.run(exercise())
 
 
+def test_listener_error_does_not_stop_the_persistent_reader() -> None:
+    """One bad entity callback must not discard a healthy device socket."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        reports: list[dict] = []
+        callback_count = 0
+
+        def listener(frame: dict) -> None:
+            nonlocal callback_count
+            callback_count += 1
+            if callback_count == 1:
+                raise ValueError("deliberate callback failure")
+            reports.append(frame)
+
+        async def handler(reader, writer) -> None:
+            await reader.readline()
+            writer.write(b'{"cmd":2,"sn":"first","msg":{"data":{"4":48}}}\r\n')
+            await writer.drain()
+            await asyncio.sleep(0.01)
+            writer.write(b'{"cmd":2,"sn":"second","msg":{"data":{"4":49}}}\r\n')
+            await writer.drain()
+            await asyncio.sleep(0.05)
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handler, "127.0.0.1", 5555)
+        device = CozyLifeDevice("127.0.0.1", timeout=1.0)
+        device.set_message_listener(listener)
+        try:
+            assert await device.async_send_status()
+            await asyncio.sleep(0.1)
+            assert callback_count == 2
+            assert reports == [
+                {"cmd": 2, "sn": "second", "msg": {"data": {"4": 49}}}
+            ]
+        finally:
+            await device.async_close()
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
 def test_status_socket_is_retained_across_the_discovery_interval() -> None:
     """A retained socket does not reconnect merely because ten seconds pass."""
     CozyLifeDevice = _load_api()
