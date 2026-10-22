@@ -51,6 +51,10 @@ _PANEL_LIGHT_DPIDS = {
     "HFyhNc": frozenset({SWITCH, BRIGHT}),
     "fBhCXl": frozenset({SWITCH, BRIGHT}),
 }
+# The downloaded S3 panel maps its five app-visible expressions to DPID 211.
+# The generic category-22 catalog lists only its shared AI service DPIDs, so
+# retain this panel-specific local control separately from those services.
+_PANEL_AI_EXPRESSION_DPIDS = {"Eklp7l": frozenset({"211"})}
 _SWITCH_GANG_DPIDS = ("2", "4", "6", "8", "10", "12", "14", "16")
 _NAMED_GANG_COUNTS = {
     "one": 1,
@@ -120,6 +124,7 @@ class DeviceClassification:
     is_gateway: bool
     is_video_intercom: bool
     is_speaker: bool
+    is_ai_expression_device: bool
     supports_switch_entities: bool
     supports_plug_metering: bool
     switch_entity_count: int
@@ -161,8 +166,10 @@ def _load_model_catalog() -> dict[str, ModelInfo]:
                     or model.get("device_model_name")
                     or model.get("n")
                 ),
-                dpids=catalog_dpids | _PANEL_LIGHT_DPIDS.get(
-                    str(product_id), frozenset()
+                dpids=(
+                    catalog_dpids
+                    | _PANEL_LIGHT_DPIDS.get(str(product_id), frozenset())
+                    | _PANEL_AI_EXPRESSION_DPIDS.get(str(product_id), frozenset())
                 ),
             )
 
@@ -246,6 +253,7 @@ def classify_device(
     # the corresponding downloadable panel.  Keep those narrow, panel-backed
     # overrides available even when the caller only has an announcement list.
     dpid_set |= _PANEL_LIGHT_DPIDS.get(pid or "", frozenset())
+    dpid_set |= _PANEL_AI_EXPRESSION_DPIDS.get(pid or "", frozenset())
     model_info = get_model_info(pid)
     model_name = model_info.model_name if model_info else None
 
@@ -379,6 +387,12 @@ def classify_device(
         and model_info.type_code == "23"
         and SWITCH in dpid_set
     )
+    is_ai_expression_device = bool(
+        model_info
+        and model_info.network_type == "02"
+        and pid in _PANEL_AI_EXPRESSION_DPIDS
+        and "211" in dpid_set
+    )
     switch_entity_count = (
         detect_switch_entity_count(dpid_set, model_name)
         if supports_switch_entities
@@ -409,6 +423,7 @@ def classify_device(
         is_gateway=is_gateway,
         is_video_intercom=is_video_intercom,
         is_speaker=is_speaker,
+        is_ai_expression_device=is_ai_expression_device,
         supports_switch_entities=supports_switch_entities,
         supports_plug_metering=supports_plug_metering,
         switch_entity_count=switch_entity_count,
@@ -429,6 +444,7 @@ def supports_local_entities(
         or classification.is_gateway
         or classification.is_video_intercom
         or classification.is_speaker
+        or classification.is_ai_expression_device
         or classification.supports_switch_entities
         or pid in LOCAL_BINARY_SENSOR_PIDS
     )

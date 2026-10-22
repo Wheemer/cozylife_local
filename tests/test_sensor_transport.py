@@ -939,6 +939,7 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     door_lock = classify_device("XxxGn1", "11", ["101"])
     speaker = classify_device("GriFPh", "23", ["1", "2", "3", "4", "5", "6"])
     ai_lamp = classify_device("HFyhNc", "22", ["201", "0"])
+    ai_companion = classify_device("Eklp7l", "22", ["201", "202", "203"])
 
     assert known_light.is_light
     assert not catalog_only_light.is_light
@@ -961,6 +962,7 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     assert not door_lock.is_video_intercom
     assert speaker.is_speaker
     assert ai_lamp.is_light
+    assert ai_companion.is_ai_expression_device
 
 
 def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:
@@ -1141,6 +1143,19 @@ def test_recovered_ai_lamp_panel_adds_its_verified_local_dpids() -> None:
         assert model is not None
         assert {"1", "4"} <= model.dpids
         assert classify_device(pid, model.type_code, model.dpids).is_light
+
+
+def test_recovered_s3_panel_adds_its_verified_expression_dpid() -> None:
+    """The exact S3 panel maps five expression values to local DPID 211."""
+    _load_api()
+    from cozylife_local.discovery import classify_device, get_model_info
+
+    model = get_model_info("Eklp7l")
+    assert model is not None
+    assert "211" in model.dpids
+    assert classify_device(
+        model.product_id, model.type_code, model.dpids
+    ).is_ai_expression_device
 
 
 def test_powered_device_accepts_apk_style_async_state_report() -> None:

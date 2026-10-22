@@ -19,6 +19,7 @@ meaning and a safe Home Assistant entity mapping.
 | Video intercom/doorbell | Reported active-call, battery, low-battery, and motion state when the documented video profile is advertised | CozyLife video project and `doorbell_en.md` |
 | Smart speaker | X7 power, volume, play/pause, and Bluetooth/local/line-in source selection | Downloaded CozyLife X7 panel |
 | AI lamp | On/off and brightness for the two Wi-Fi AI-lamp profiles | Downloaded CozyLife AI-lamp panel |
+| AI companion | S3 expression selection (happy, sad, disappointed, angry, surprised) | Downloaded CozyLife S3 panel |
 
 ## Deliberately not guessed
 
@@ -62,9 +63,10 @@ are still opaque:
 - Smart speaker (2): both Wi-Fi X7 profiles have APK-panel-backed local media
   players. Power, volume, play/pause, and source selection are exposed.
 - AI conversation (32): two AI-lamp profiles have panel-verified local light
-  controls. The remaining conversational controls stay in the evidence queue:
-  their panel services are downloaded from the CozyLife API, and no local
-  entity is invented until that panel source is obtained and traced.
+  controls, and the S3 profile has a panel-verified expression selector. The
+  remaining conversational controls stay in the evidence queue: their panel
+  services are downloaded from the CozyLife API, and no local entity is
+  invented until that panel source is obtained and traced.
 - Outdoor travel has no Wi-Fi profiles in this APK catalogue.
 
 ## Transport rule
