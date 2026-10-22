@@ -28,6 +28,7 @@ class BinarySensorDescription:
 
 _WIFI_CONTACT_SENSOR_PIDS = LOCAL_BINARY_SENSOR_PIDS - {"y9DaDw"}
 _WIFI_WATER_SENSOR_PIDS = frozenset({"y9DaDw"})
+_WIFI_MULTI_SENSOR_PIDS = frozenset({"t8nvdb"})
 
 
 def _binary_sensor_descriptions(
@@ -57,6 +58,26 @@ def _binary_sensor_descriptions(
                 device_class=BinarySensorDeviceClass.MOISTURE,
             )
         )
+
+    if pid in _WIFI_MULTI_SENSOR_PIDS:
+        if "6" in dpid_set:
+            descriptions.append(
+                BinarySensorDescription(
+                    dpid="6",
+                    key="motion",
+                    name="Motion",
+                    device_class=BinarySensorDeviceClass.MOTION,
+                )
+            )
+        if "7" in dpid_set:
+            descriptions.append(
+                BinarySensorDescription(
+                    dpid="7",
+                    key="contact",
+                    name="Contact",
+                    device_class=BinarySensorDeviceClass.DOOR,
+                )
+            )
 
     return descriptions
 

@@ -55,14 +55,13 @@ async def async_setup_entry(
     entities = [CozyLifeIPAddressSensor(coordinator)]
     dpids = set(coordinator.device.dpid)
 
-    if coordinator.classification.is_environment_sensor:
-        entities.extend(
-            [
-                CozyLifeTemperatureSensor(coordinator, config_entry),
-                CozyLifeHumiditySensor(coordinator, config_entry),
-                CozyLifeBatterySensor(coordinator, config_entry),
-            ]
-        )
+    if coordinator.classification.is_environment_sensor or coordinator.classification.is_multi_sensor:
+        entities.extend([
+            CozyLifeTemperatureSensor(coordinator, config_entry),
+            CozyLifeHumiditySensor(coordinator, config_entry),
+        ])
+        if SENSOR_BATTERY in dpids:
+            entities.append(CozyLifeBatterySensor(coordinator, config_entry))
 
     if coordinator.classification.supports_plug_metering:
         plug_sensor_descriptions = [
