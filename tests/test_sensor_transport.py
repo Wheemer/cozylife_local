@@ -41,6 +41,13 @@ def _load_coordinator():
         @classmethod
         def __class_getitem__(cls, _item):
             return cls
+    background_discovery = types.ModuleType("cozylife_local.background_discovery")
+
+    async def async_get_background_discovery(_hass):
+        return None
+
+    background_discovery.async_get_background_discovery = async_get_background_discovery
+    sys.modules["cozylife_local.background_discovery"] = background_discovery
 
     update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
     update_coordinator.UpdateFailed = RuntimeError
@@ -944,7 +951,7 @@ def test_all_catalogued_wifi_electrical_relays_and_meters_get_local_entities() -
     ]
     assert electrical_models
 
-    meter_dpids = {"26", "27", "28", "29"}
+    meter_dpids = {"26", "27", "28", "29", "42"}
     for model in electrical_models:
         classification = classify_device(
             model.product_id,
@@ -1011,8 +1018,8 @@ def test_environment_report_accepts_a_valid_partial_measurement() -> None:
     assert not coordinator._has_valid_environment_measurements({"4": 0})
 
 
-def test_powered_udp_announcement_gates_one_status_write_per_reply() -> None:
-    """Every fresh matching UDP reply gates one APK-style status write."""
+def test_powered_udp_announcement_does_not_query_device() -> None:
+    """A powered device refreshes its address without a discovery-triggered query."""
     CozyLifeCoordinator = _load_coordinator()
 
     async def exercise() -> None:
@@ -1044,8 +1051,37 @@ def test_powered_udp_announcement_gates_one_status_write_per_reply() -> None:
         await coordinator.async_handle_discovered_address("10.0.0.44")
         await coordinator.async_handle_discovered_address("10.0.0.45")
 
-        assert status_writes == [True, True]
+        assert status_writes == []
         assert updates == [{"ip_address": "10.0.0.45"}]
+
+    asyncio.run(exercise())
+
+
+def test_powered_device_recovery_uses_vendor_retry_cadence() -> None:
+    """Powered-device retries remain independent from UDP announcements."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        coordinator = object.__new__(CozyLifeCoordinator)
+        refreshes: list[bool] = []
+        delays: list[float] = []
+
+        async def refresh() -> None:
+            refreshes.append(True)
+
+        async def sleep(delay: float) -> None:
+            delays.append(delay)
+            raise asyncio.CancelledError
+
+        coordinator.async_request_refresh = refresh
+        with patch("cozylife_local.coordinator.asyncio.sleep", sleep):
+            try:
+                await coordinator._async_refresh_powered_device()
+            except asyncio.CancelledError:
+                pass
+
+        assert refreshes == [True]
+        assert delays == [60.0]
 
     asyncio.run(exercise())
 

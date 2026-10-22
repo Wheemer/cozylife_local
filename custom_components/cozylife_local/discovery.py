@@ -17,6 +17,7 @@ from .const import (
     HUE,
     KNOWN_SENSOR_PIDS,
     LIGHT_TYPE_CODE,
+    PLUG_ADDED_ENERGY,
     PLUG_CURRENT,
     PLUG_ENERGY,
     PLUG_POWER,
@@ -35,7 +36,13 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 _MODEL_PATH = Path(__file__).with_name("model.json")
-_METERING_DPIDS = {PLUG_ENERGY, PLUG_CURRENT, PLUG_POWER, PLUG_VOLTAGE}
+_METERING_DPIDS = {
+    PLUG_ADDED_ENERGY,
+    PLUG_ENERGY,
+    PLUG_CURRENT,
+    PLUG_POWER,
+    PLUG_VOLTAGE,
+}
 _SWITCH_GANG_DPIDS = ("2", "4", "6", "8", "10", "12", "14", "16")
 _NAMED_GANG_COUNTS = {
     "one": 1,

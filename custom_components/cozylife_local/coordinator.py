@@ -18,6 +18,7 @@ _UPDATE_LOGGER.setLevel(logging.INFO)
 # These are local attempt bounds, not a claimed sensor wake or report schedule.
 SENSOR_CONNECT_TIMEOUT_SECONDS = 0.2
 SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.5
+POWERED_DEVICE_RETRY_INTERVAL_SECONDS = 60.0
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
@@ -67,9 +68,8 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # probing outside DataUpdateCoordinator: it uses the configured local
         # address while UDP discovery independently refreshes that address.
         #
-        # Powered devices also do not use an independent timer: their local
-        # status request is gated by a fresh matching UDP announcement, as the
-        # APK's Wi-Fi sender is gated by its UDP device cache.
+        # Powered devices use a separate recovery cadence that mirrors the
+        # vendor integration and is independent of UDP discovery.
         interval = None
 
         super().__init__(
@@ -81,6 +81,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.device = device
         self._sensor_probe_task: asyncio.Task[None] | None = None
+        self._powered_refresh_task: asyncio.Task[None] | None = None
         self._identity_refresh_task: asyncio.Task[None] | None = None
         if self._uses_sensor_polling:
             # Bound a failed local attempt so a sleeping device cannot consume
@@ -107,6 +108,12 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "cozylife sensor wake-window probing",
             )
 
+        elif not self._uses_sensor_polling and self._powered_refresh_task is None:
+            self._powered_refresh_task = self.hass.async_create_background_task(
+                self._async_refresh_powered_device(),
+                "cozylife powered-device connection recovery",
+            )
+
     async def _async_probe_sensor_wake_window(self) -> None:
         """Issue one serialized local status request every half second."""
         while True:
@@ -117,6 +124,17 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if remaining > 0:
                 await asyncio.sleep(remaining)
+
+    async def _async_refresh_powered_device(self) -> None:
+        """Recover a powered device independently of UDP announcements.
+
+        The vendor integration attempts reconnection every 60 seconds after a
+        failed TCP session. Mirror that bounded lifecycle here, while retaining
+        our asyncio transport and its persistent reader once a connection works.
+        """
+        while True:
+            await self.async_request_refresh()
+            await asyncio.sleep(POWERED_DEVICE_RETRY_INTERVAL_SECONDS)
 
     async def async_handle_discovered_address(self, ip_address: str) -> None:
         """Use an APK discovery reply to refresh this entry's local address."""
@@ -134,12 +152,11 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # without a synthetic high-frequency polling loop.
             await self.device.async_send_status()
             return
-        # A matching UDP reply is the local-presence gate for the APK's Wi-Fi
-        # writer. Send exactly one local cmd-2 request in that fresh window,
-        # including when the address is unchanged. The APK does not wait for a
-        # correlated reply here; the persistent reader publishes any later
-        # frame, so a delayed reply cannot mark the device unavailable.
-        await self.device.async_send_status()
+        # A UDP announcement only refreshes the local address/presence cache.
+        # The vendor integration keeps a separate persistent TCP lifecycle for
+        # powered devices; it does not turn every discovery reply into a cmd-2
+        # status request. Doing so repeatedly hit devices that advertise on
+        # UDP while refusing TCP/5555 and produced a noisy failed-refresh loop.
 
     async def _async_promote_sensor_identity(self) -> None:
         """Replace a sleeping-sensor setup ID after a verified local handshake.
@@ -219,6 +236,14 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except asyncio.CancelledError:
                 pass
             self._sensor_probe_task = None
+        if self._powered_refresh_task:
+            self._powered_refresh_task.cancel()
+            try:
+                await self._powered_refresh_task
+            except asyncio.CancelledError:
+                pass
+            self._powered_refresh_task = None
+
         if self._identity_refresh_task:
             self._identity_refresh_task.cancel()
             try:

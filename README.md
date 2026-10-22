@@ -110,7 +110,7 @@ When a wall switch reports the required option DPIDs, CozyLife Local exposes:
 
 Metered plugs expose outlet control plus electricity sensors:
 
-*   **Energy** (`DPID 26`) as kWh using `/1000`
+*   **Total energy consumption** (`DPID 42`) as kWh using `/1000`
 *   **Current** (`DPID 27`) as raw mA
 *   **Power** (`DPID 28`) as raw W
 *   **Voltage** (`DPID 29`) as raw V
@@ -149,7 +149,7 @@ CozyLife devices report their functionalities via standard Data Point IDs (DPIDs
 | `13` | Light Countdown | Countdown seconds on compatible lights. |
 | `18` | Power-on State | Relay restore behavior after power loss on compatible plugs and wall switches. |
 | `19` | LED Status | Indicator LED behavior on compatible plugs and wall switches. |
-| `26` | Cumulative Energy (kWh)| Exposes total energy consumption, fully compatible with HA Energy Dashboard. |
+| `42` | Total Energy Consumption (kWh)| Exposes total energy consumption, fully compatible with HA Energy Dashboard. |
 | `27` | Active Current (mA) | Live electrical current monitoring. |
 | `28` | Active Power (W) | Live active load power monitoring. |
 | `29` | Line Voltage (V) | Live grid voltage monitoring. |

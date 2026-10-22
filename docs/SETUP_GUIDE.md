@@ -122,7 +122,7 @@ Multi-gang devices (such as double or triple rocker wall switches) share a singl
 
 Our integration supports both standard on/off plugs and high-end smart plugs equipped with electricity metering chips.
 
-*   **Metered Plugs**: If the device's local DPID response reports DPIDs `26` through `29`, the integration will automatically expose:
+*   **Metered Plugs**: If the device's local DPID response reports metering DPIDs, the integration exposes the values it recognizes. Total energy consumption is reported by DPID `42`.
     *   **Voltage** (V) - `sensor.cozylife_device_voltage`
     *   **Current** (mA) - `sensor.cozylife_device_current`
     *   **Active Power** (W) - `sensor.cozylife_device_power`
@@ -180,8 +180,8 @@ Restart Home Assistant to apply the logging configuration.
 Go to `Settings ➔ System ➔ Logs` and search for `cozylife_local`. Look for the successful discovery line:
 
 ```text
-Successfully discovered device 192.168.1.177 locally: DID=0011223344, PID=xyz987, Type=00, DPIDs=['1', '26', '27', '28', '29']
-Detected 1 outlet entity/entities at 192.168.1.177 with DPIDs: ['1', '26', '27', '28', '29']
+Successfully discovered device 192.168.1.177 locally: DID=0011223344, PID=xyz987, Type=00, DPIDs=['1', '26', '27', '28', '29', '42']
+Detected 1 outlet entity/entities at 192.168.1.177 with DPIDs: ['1', '26', '27', '28', '29', '42']
 ```
 
 ### Step 3: Open a GitHub Issue
