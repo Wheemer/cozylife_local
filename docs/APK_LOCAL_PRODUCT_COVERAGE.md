@@ -14,7 +14,7 @@ meaning and a safe Home Assistant entity mapping.
 | Motor | Native fan power, documented percentage/gear speeds, and wind modes | APK catalogue and `motor_en.md` |
 | Sensor | Temperature, humidity, battery, contact, water leak, and the Wi-Fi multi-sensor's motion/contact profile | APK catalogue and `sensor_en.md` |
 | Home appliance | Documented DPID-1 `switch_power` as a generic switch | APK catalogue and `appliance_en.md` |
-| Energy storage | Battery, total input/output power, remaining times, and battery temperature when advertised | APK catalogue and `battery_en.md` |
+| Energy storage | Battery, total input/output power, remaining times, battery temperature, and documented branch-output switches when advertised | APK catalogue and `battery_en.md` |
 | Gateway | Documented discovery-mode configuration switch | APK catalogue and `gateway_en.md` |
 | Video intercom/doorbell | Reported active-call, battery, low-battery, and motion state when the documented video profile is advertised | CozyLife video project and `doorbell_en.md` |
 | Smart speaker | X7 power, volume, play/pause, and Bluetooth/local/line-in source selection | Downloaded CozyLife X7 panel |
@@ -49,8 +49,10 @@ are still opaque:
   entities.
 - Sensors: 14 of 15 Wi-Fi profiles have documented entities; the remaining
   profile is labelled a Zigbee door magnet despite its catalogue network flag.
-- Energy: 13 of 15 Wi-Fi profiles expose documented telemetry. The other two
-  advertise only a bit-mask output DPID without a channel map.
+- Energy: 13 of 15 Wi-Fi profiles expose documented telemetry. The 12 full
+  profiles that advertise branch-output power DPIDs also expose the matching
+  DPID-1 output bits as local switches. The other two advertise only a
+  bit-mask output DPID without a channel map, so no channels are invented.
 - Gateways: the one Wi-Fi profile has a documented discovery-mode entity.
 - Camera & lock: 10 of 43 profiles advertise the verified video-state DPID
   set. The remaining lock and camera controls await a verified local/session

@@ -1058,6 +1058,29 @@ def test_catalogued_wifi_energy_profiles_with_telemetry_get_local_entities() -> 
             assert classification.is_energy_storage, model.product_id
 
 
+def test_energy_output_channels_require_the_documented_telemetry_pairing() -> None:
+    """Only power stations with branch telemetry get DPID-1 output switches."""
+    _load_api()
+    from cozylife_local.discovery import _load_model_catalog
+
+    energy_models = [
+        model
+        for model in _load_model_catalog().values()
+        if model.type_code == "06" and model.network_type == "02"
+    ]
+    branch_dpids = {str(dpid) for dpid in range(5, 13)}
+    channelled_models = [
+        model
+        for model in energy_models
+        if "1" in model.dpids and branch_dpids <= model.dpids
+    ]
+    assert len(channelled_models) == 12
+    assert {model.product_id for model in energy_models if model.dpids == {"1"}} == {
+        "JTEnK3",
+        "XZUWYv",
+    }
+
+
 def test_manual_sensor_choices_include_only_apk_wifi_profiles() -> None:
     """Manual sleeping-sensor setup must not offer Bluetooth or Zigbee PIDs."""
     _load_api()
