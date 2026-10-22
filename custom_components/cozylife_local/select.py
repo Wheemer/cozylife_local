@@ -92,12 +92,12 @@ class CozyLifePowerOnStateSelect(
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_has_entity_name = True
-    _attr_options = list(POWER_ON_STATE_OPTIONS)
 
     def __init__(self, coordinator: CozyLifeCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_name = "Power-on state"
         self._attr_unique_id = f"{coordinator.device.device_id}_power_on_state"
+        self._attr_options = list(POWER_ON_STATE_OPTIONS)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -143,12 +143,12 @@ class CozyLifeLedStatusSelect(
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_has_entity_name = True
-    _attr_options = list(LED_STATUS_OPTIONS)
 
     def __init__(self, coordinator: CozyLifeCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_name = "LED status"
         self._attr_unique_id = f"{coordinator.device.device_id}_led_status"
+        self._attr_options = list(LED_STATUS_OPTIONS)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -194,12 +194,12 @@ class CozyLifeAiExpressionSelect(
     """Expression selector for the panel-verified CozyLife S3 profile."""
 
     _attr_has_entity_name = True
-    _attr_options = list(AI_EXPRESSION_OPTIONS)
 
     def __init__(self, coordinator: CozyLifeCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_name = "Expression"
         self._attr_unique_id = f"{coordinator.device.device_id}_expression"
+        self._attr_options = list(AI_EXPRESSION_OPTIONS)
 
     @property
     def device_info(self) -> DeviceInfo:

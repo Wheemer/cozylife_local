@@ -54,12 +54,12 @@ class CozyLifeSpeaker(
         | MediaPlayerEntityFeature.PAUSE
         | MediaPlayerEntityFeature.SELECT_SOURCE
     )
-    _attr_source_list = list(_SOURCES)
 
     def __init__(self, coordinator: CozyLifeCoordinator) -> None:
         """Initialize the speaker entity."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.device.device_id}_speaker"
+        self._attr_source_list = list(_SOURCES)
 
     @property
     def device_info(self) -> DeviceInfo:
