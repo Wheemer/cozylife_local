@@ -944,7 +944,8 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     assert not zigbee_environment_sensor.is_local_transport
     assert not bluetooth_environment_sensor.is_environment_sensor
     assert not bluetooth_environment_sensor.is_local_transport
-    assert not appliance.supports_switch_entities
+    assert appliance.is_generic_power_device
+    assert appliance.supports_switch_entities
     assert tower_fan.is_fan
 
 
@@ -996,6 +997,29 @@ def test_all_catalogued_wifi_electrical_relays_and_meters_get_local_entities() -
             assert classification.supports_switch_entities, model.product_id
         if meter_dpids & model.dpids:
             assert classification.supports_plug_metering, model.product_id
+
+
+def test_all_catalogued_wifi_appliances_with_power_dpid_get_a_switch() -> None:
+    """Expose the documented DPID-1 switch_power control for each appliance."""
+    _load_api()
+    from cozylife_local.discovery import _load_model_catalog, classify_device
+
+    appliances = [
+        model
+        for model in _load_model_catalog().values()
+        if model.type_code == "05" and model.network_type == "02"
+    ]
+    assert appliances
+
+    for model in appliances:
+        classification = classify_device(
+            model.product_id,
+            model.type_code,
+            model.dpids,
+        )
+        if "1" in model.dpids:
+            assert classification.is_generic_power_device, model.product_id
+            assert classification.supports_switch_entities, model.product_id
 
 
 def test_manual_sensor_choices_include_only_apk_wifi_profiles() -> None:

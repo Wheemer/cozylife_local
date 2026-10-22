@@ -263,7 +263,16 @@ def classify_device(
     is_known_motor = bool(model_info and model_info.type_name.lower() == "motor")
     is_sensor_category = bool(model_info and model_info.type_name.lower() == "sensor")
     is_outlet = False
-    is_generic_power_device = False
+    # Every APK-catalogued Wi-Fi home appliance exposes DPID 1 as the vendor
+    # ``switch_power`` control.  Keep this distinct from electrical outlets:
+    # Home Assistant should show a generic switch rather than falsely calling
+    # a heater, humidifier, kettle, disposer, or doorbell an outlet.
+    is_generic_power_device = bool(
+        model_info
+        and model_info.network_type == "02"
+        and model_info.type_code == "05"
+        and SWITCH in dpid_set
+    )
     has_light_capability = (
         TEMP in dpid_set
         or BRIGHT in dpid_set
@@ -297,7 +306,7 @@ def classify_device(
         and SWITCH in dpid_set
         and not is_known_motor
         and not (is_light and has_light_capability)
-        and is_switch
+        and (is_switch or is_generic_power_device)
     )
     # The APK catalogue identifies these as Wi-Fi motors and the vendor DPID
     # table defines their relay, speed, and wind-mode controls.  They need the
