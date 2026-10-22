@@ -937,6 +937,7 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     gateway = classify_device("v44j8s", "08", ["2"])
     video_intercom = classify_device("wmX4pg", "11", ["101"])
     door_lock = classify_device("XxxGn1", "11", ["101"])
+    speaker = classify_device("GriFPh", "23", ["1", "2", "3", "4", "5", "6"])
 
     assert known_light.is_light
     assert not catalog_only_light.is_light
@@ -957,6 +958,7 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     assert gateway.is_gateway
     assert video_intercom.is_video_intercom
     assert not door_lock.is_video_intercom
+    assert speaker.is_speaker
 
 
 def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:
@@ -1071,6 +1073,25 @@ def test_platforms_exclude_home_assistant_schedule_emulation() -> None:
     from cozylife_local.const import PLATFORMS
 
     assert "time" not in PLATFORMS
+
+
+def test_all_catalogued_wifi_speakers_get_a_media_player() -> None:
+    """The APK's X7 panel verifies the two Wi-Fi speaker profiles."""
+    _load_api()
+    from cozylife_local.discovery import _load_model_catalog, classify_device
+
+    speakers = [
+        model
+        for model in _load_model_catalog().values()
+        if model.type_code == "23" and model.network_type == "02"
+    ]
+    assert {model.product_id for model in speakers} == {"GriFPh", "ZhTBTj"}
+
+    for model in speakers:
+        classification = classify_device(
+            model.product_id, model.type_code, model.dpids
+        )
+        assert classification.is_speaker, model.product_id
 
 
 def test_powered_device_accepts_apk_style_async_state_report() -> None:

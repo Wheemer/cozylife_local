@@ -17,6 +17,7 @@ meaning and a safe Home Assistant entity mapping.
 | Energy storage | Battery, total input/output power, remaining times, and battery temperature when advertised | APK catalogue and `battery_en.md` |
 | Gateway | Documented discovery-mode configuration switch | APK catalogue and `gateway_en.md` |
 | Video intercom/doorbell | Reported active-call, battery, low-battery, and motion state when the documented video profile is advertised | CozyLife video project and `doorbell_en.md` |
+| Smart speaker | X7 power, volume, play/pause, and Bluetooth/local/line-in source selection | Downloaded CozyLife X7 panel |
 
 ## Deliberately not guessed
 
@@ -29,11 +30,10 @@ meaning and a safe Home Assistant entity mapping.
   as a call-state event for the video protocol, not as an unlock command.
   Lock actuation and video streaming stay out of scope until their local
   encrypted/session protocol is independently verified.
-- Voice/AI and speaker products remain in the evidence-gathering queue. Their
-  201--203 and 1--25 DPID sets have no verified local entity semantics in the
-  APK resources or CozyLife's published DPID documentation yet. Once those
-  controls are mapped, the integration will add only entities that match the
-  verified local behavior.
+- AI conversation products remain in the evidence-gathering queue. Their
+  201--203 DPID controls are not mapped in the APK resources or CozyLife's
+  published DPID documentation yet. Once recovered from their panel source,
+  the integration will add only entities that match verified local behavior.
 
 ## Product-audit queue
 
@@ -54,10 +54,12 @@ are still opaque:
   set. The remaining lock and camera controls await a verified local/session
   protocol.
 - DIY: all three Wi-Fi profiles expose only opaque DPID-51 JSON.
-- AI conversation (32) and smart speaker (2): their panel services are
-  downloaded after sign-in from the CozyLife API. This APK includes only their
-  service IDs and DPID lists, not the control mapping; no local entity is
-  invented until that panel source is obtained and traced.
+- Smart speaker (2): both Wi-Fi X7 profiles have APK-panel-backed local media
+  players. Power, volume, play/pause, and source selection are exposed.
+- AI conversation (32): the controls remain in the evidence queue. Their
+  panel services are downloaded from the CozyLife API, and the packaged APK
+  has only the service IDs and DPID lists; no local entity is invented until
+  that panel source is obtained and traced.
 - Outdoor travel has no Wi-Fi profiles in this APK catalogue.
 
 ## Transport rule

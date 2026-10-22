@@ -29,7 +29,7 @@
 
 **CozyLife Local is stable for the device families that have been confirmed through local validation and field reports.**
 
-Confirmed support currently includes multi-gang wall switches, dimmable and color-capable lights, sleeping temperature/humidity sensors, standard smart plugs, and power-metered outlets. Physical device specifications still vary by manufacturer and model layout, so unconfirmed CozyLife devices may need catalog or DPID adjustments.
+Confirmed support currently includes multi-gang wall switches, dimmable and color-capable lights, sleeping temperature/humidity sensors, standard smart plugs, power-metered outlets, and the APK-catalogued Wi-Fi X7 speakers. Physical device specifications still vary by manufacturer and model layout, so unconfirmed CozyLife devices may need catalog or DPID adjustments.
 
 We are still looking for reports to expand coverage for:
 
@@ -52,6 +52,7 @@ We are still looking for reports to expand coverage for:
 *   🎛️ **Multi-Gang Switch Bitmasks**: Native, low-level bitmask control on DPID 1 ensures multi-gang rockers (e.g., double or triple rocker switches) act as individual, responsive entities.
 *   🧩 **Switch Option Controls**: Exposes Power-on State, LED Status, and overcurrent protection controls only where the individual device reports the required DPIDs.
 *   📈 **Smart Energy Metering**: Exposes voltage, current, active power, and cumulative energy sensors (compatible with the HA Energy Dashboard), plus supported countdown and plug option controls.
+*   🔊 **Local Speaker Control**: The APK-catalogued Wi-Fi X7 speaker profiles expose local power, volume, play/pause, and Bluetooth, local-playback, or line-in source controls through one Home Assistant media player.
 *   💡 **State & Color-Mode Safeguards**: Smooth transitions and automatic work-mode state preservation prevents smart lights from glitching or flashing dark blue during custom RGB commands.
 *   🕒 **Light Countdowns**: Exposes validated local countdown controls on compatible bulbs.
 

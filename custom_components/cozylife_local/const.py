@@ -39,6 +39,7 @@ RGB_LIGHT_TYPE_CODE = '02'  # Some RGB lights report type code 02
 
 PLATFORMS = [
     "light",
+    "media_player",
     "switch",
     "sensor",
     "binary_sensor",

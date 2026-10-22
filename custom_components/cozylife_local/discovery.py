@@ -107,6 +107,7 @@ class DeviceClassification:
     is_multi_sensor: bool
     is_gateway: bool
     is_video_intercom: bool
+    is_speaker: bool
     supports_switch_entities: bool
     supports_plug_metering: bool
     switch_entity_count: int
@@ -348,6 +349,16 @@ def classify_device(
             or has_video_state_profile
         )
     )
+    # The APK catalog contains two Wi-Fi X7 smart-speaker profiles. Their
+    # downloaded CozyLife panel verifies the local power, playback, volume,
+    # and source controls, so use the media-player platform rather than
+    # treating them as generic switches or voice assistants.
+    is_speaker = bool(
+        model_info
+        and model_info.network_type == "02"
+        and model_info.type_code == "23"
+        and SWITCH in dpid_set
+    )
     switch_entity_count = (
         detect_switch_entity_count(dpid_set, model_name)
         if supports_switch_entities
@@ -377,6 +388,7 @@ def classify_device(
         is_multi_sensor=is_multi_sensor,
         is_gateway=is_gateway,
         is_video_intercom=is_video_intercom,
+        is_speaker=is_speaker,
         supports_switch_entities=supports_switch_entities,
         supports_plug_metering=supports_plug_metering,
         switch_entity_count=switch_entity_count,
@@ -396,6 +408,7 @@ def supports_local_entities(
         or classification.is_multi_sensor
         or classification.is_gateway
         or classification.is_video_intercom
+        or classification.is_speaker
         or classification.supports_switch_entities
         or pid in LOCAL_BINARY_SENSOR_PIDS
     )
