@@ -1100,6 +1100,47 @@ def test_manual_sensor_choices_include_only_apk_wifi_profiles() -> None:
     assert "v2kv9f" not in pids
 
 
+def test_wifi_temperature_humidity_motion_profile_exposes_motion() -> None:
+    """The APK's JTFMlo profile has a documented DPID-6 motion report."""
+    _load_api()
+    components = types.ModuleType("homeassistant.components")
+    binary_sensor_component = types.ModuleType("homeassistant.components.binary_sensor")
+
+    class BinarySensorDeviceClass:
+        DOOR = "door"
+        MOISTURE = "moisture"
+        MOTION = "motion"
+        BATTERY = "battery"
+        OCCUPANCY = "occupancy"
+
+    binary_sensor_component.BinarySensorDeviceClass = BinarySensorDeviceClass
+    binary_sensor_component.BinarySensorEntity = object
+    config_entries = types.ModuleType("homeassistant.config_entries")
+    config_entries.ConfigEntry = object
+    entity = types.ModuleType("homeassistant.helpers.entity")
+    entity.DeviceInfo = dict
+    update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
+
+    class CoordinatorEntity:
+        @classmethod
+        def __class_getitem__(cls, _item):
+            return cls
+
+    update_coordinator.CoordinatorEntity = CoordinatorEntity
+    sys.modules["homeassistant.components"] = components
+    sys.modules["homeassistant.components.binary_sensor"] = binary_sensor_component
+    sys.modules["homeassistant.config_entries"] = config_entries
+    sys.modules["homeassistant.helpers.entity"] = entity
+    sys.modules["homeassistant.helpers.update_coordinator"] = update_coordinator
+    sys.modules.pop("cozylife_local.binary_sensor", None)
+    from cozylife_local.binary_sensor import _binary_sensor_descriptions
+
+    descriptions = _binary_sensor_descriptions("JTFMlo", ["4", "6", "8", "9"])
+    assert {(description.key, description.dpid) for description in descriptions} == {
+        ("motion", "6"),
+    }
+
+
 def test_wifi_catalogue_flag_wins_over_misleading_contact_sensor_name() -> None:
     """The Wi-Fi-labelled gate magnet is retained on the local contact path."""
     _load_api()
