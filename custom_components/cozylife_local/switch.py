@@ -160,6 +160,19 @@ class CozyLifeSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
         else:
             _LOGGER.debug(f"Switch {self.name} is already in the desired state.")
 
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn this specific switch gang on."""
+        await self._async_set_gang_state(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn this specific switch gang off."""
+        await self._async_set_gang_state(False)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.async_write_ha_state()
+
 
 class CozyLifeDpidSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
     """A documented boolean control represented by one DPID."""
@@ -210,20 +223,6 @@ class CozyLifeDpidSwitch(CoordinatorEntity[CozyLifeCoordinator], SwitchEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()
-
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn this specific switch gang on."""
-        await self._async_set_gang_state(True)
-
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn this specific switch gang off."""
-        await self._async_set_gang_state(False)
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        self.async_write_ha_state()
-
 
 class CozyLifePlugBooleanSwitch(
     CoordinatorEntity[CozyLifeCoordinator],
