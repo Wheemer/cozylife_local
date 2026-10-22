@@ -102,6 +102,7 @@ class DeviceClassification:
     is_outlet: bool
     is_generic_power_device: bool
     is_known_motor: bool
+    is_fan: bool
     supports_switch_entities: bool
     supports_plug_metering: bool
     switch_entity_count: int
@@ -298,6 +299,10 @@ def classify_device(
         and not (is_light and has_light_capability)
         and is_switch
     )
+    # The APK catalogue identifies these as Wi-Fi motors and the vendor DPID
+    # table defines their relay, speed, and wind-mode controls.  They need the
+    # native fan platform rather than being mistaken for a multi-gang relay.
+    is_fan = is_local_transport and is_known_motor and SWITCH in dpid_set
     switch_entity_count = (
         detect_switch_entity_count(dpid_set, model_name)
         if supports_switch_entities
@@ -322,6 +327,7 @@ def classify_device(
         is_outlet=is_outlet,
         is_generic_power_device=is_generic_power_device,
         is_known_motor=is_known_motor,
+        is_fan=is_fan,
         supports_switch_entities=supports_switch_entities,
         supports_plug_metering=supports_plug_metering,
         switch_entity_count=switch_entity_count,
@@ -336,6 +342,7 @@ def supports_local_entities(
     return bool(
         classification.is_environment_sensor
         or classification.is_light
+        or classification.is_fan
         or classification.supports_switch_entities
         or pid in LOCAL_BINARY_SENSOR_PIDS
     )

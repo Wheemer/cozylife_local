@@ -931,6 +931,7 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     zigbee_environment_sensor = classify_device("v2kv9f", "03", ["8", "9"])
     bluetooth_environment_sensor = classify_device("bQ2cGF", "03", ["4", "8", "9"])
     appliance = classify_device("CJjAvl", "05", ["1"])
+    tower_fan = classify_device("blEGaW", "02", ["1", "4", "9", "10", "11"])
 
     assert known_light.is_light
     assert not catalog_only_light.is_light
@@ -944,6 +945,7 @@ def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     assert not bluetooth_environment_sensor.is_environment_sensor
     assert not bluetooth_environment_sensor.is_local_transport
     assert not appliance.supports_switch_entities
+    assert tower_fan.is_fan
 
 
 def test_apk_catalog_profiles_cover_each_supported_local_family() -> None:

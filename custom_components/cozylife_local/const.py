@@ -42,6 +42,7 @@ PLATFORMS = [
     "switch",
     "sensor",
     "binary_sensor",
+    "fan",
     "number",
     "select",
 ]
