@@ -67,8 +67,8 @@ async def async_setup_entry(
         plug_sensor_descriptions = [
             PlugSensorDescription(
                 dpid=PLUG_ENERGY,
-                key="energy",
-                name="Energy",
+                key="total_energy",
+                name="Total energy",
                 device_class=SensorDeviceClass.ENERGY,
                 state_class=SensorStateClass.TOTAL_INCREASING,
                 native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,

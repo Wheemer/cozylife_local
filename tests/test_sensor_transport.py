@@ -978,6 +978,35 @@ def test_powered_property_query_uses_apk_complete_property_frame() -> None:
     asyncio.run(exercise())
 
 
+def test_powered_property_recovery_queries_missing_advertised_dpids() -> None:
+    """Recover only advertised plug values absent from the primary response."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        requested: list[list[str]] = []
+
+        async def async_get_state(dpids: list[str]) -> dict[str, int]:
+            requested.append(dpids)
+            return {"27": 240, "29": 230}
+
+        coordinator = object.__new__(CozyLifeCoordinator)
+        coordinator.classification = types.SimpleNamespace(
+            supports_plug_metering=True
+        )
+        coordinator.device = types.SimpleNamespace(
+            dpid=["1", "18", "19", "26", "27", "28", "29", "32", "42"],
+            ip_address="10.0.0.44",
+            async_get_state=async_get_state,
+        )
+
+        assert await coordinator._async_add_missing_powered_state({"1": 1}) == {
+            "1": 1, "27": 240, "29": 230
+        }
+        assert requested == [["18", "19", "27", "28", "29", "32", "42"]]
+
+    asyncio.run(exercise())
+
+
 def test_catalog_classification_requires_explicit_local_capabilities() -> None:
     """Do not expose catalog-only lights or non-Wi-Fi sensors as local devices."""
     _load_api()
