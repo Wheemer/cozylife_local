@@ -392,6 +392,10 @@ class CozyLifeDevice:
         """Request the APK's complete local property payload for a powered device."""
         return await self._async_get_state([0])
 
+    async def async_get_state(self, dpids: list[str]) -> Optional[Dict[str, Any]]:
+        """Request a narrow set of advertised local properties."""
+        return await self._async_get_state([int(dpid) for dpid in dpids])
+
     async def _async_get_state(self, attributes: list[int]) -> Optional[Dict[str, Any]]:
         """Request the selected APK state payload and await its state frame."""
         if self._status_lock is None:

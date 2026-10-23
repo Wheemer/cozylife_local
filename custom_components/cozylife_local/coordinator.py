@@ -7,7 +7,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .background_discovery import async_get_background_discovery
-from .const import SENSOR_HUMIDITY, SENSOR_TEMPERATURE
+from .const import (
+    PLUG_CURRENT,
+    PLUG_ENERGY,
+    PLUG_LED_STATUS,
+    PLUG_OVERCURRENT_PROTECTION,
+    PLUG_POWER,
+    PLUG_POWER_ON_STATE,
+    PLUG_VOLTAGE,
+    SENSOR_HUMIDITY,
+    SENSOR_TEMPERATURE,
+)
 from .cozylife_api import CozyLifeDevice
 from .discovery import classify_device
 
@@ -23,6 +33,15 @@ ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
 }
+POWERED_STATE_FALLBACK_DPIDS = (
+    PLUG_POWER_ON_STATE,
+    PLUG_LED_STATUS,
+    PLUG_CURRENT,
+    PLUG_POWER,
+    PLUG_VOLTAGE,
+    PLUG_OVERCURRENT_PROTECTION,
+    PLUG_ENERGY,
+)
 
 
 def _is_valid_environment_measurement(
@@ -357,6 +376,32 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
         return state_data
 
+    async def _async_add_missing_powered_state(
+        self, state_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Recover advertised plug fields omitted by the property response."""
+        if not self.classification.supports_plug_metering:
+            return state_data
+
+        advertised_dpids = set(self.device.dpid)
+        missing_dpids = [
+            dpid
+            for dpid in POWERED_STATE_FALLBACK_DPIDS
+            if dpid in advertised_dpids and dpid not in state_data
+        ]
+        if not missing_dpids:
+            return state_data
+
+        recovered_state = await self.device.async_get_state(missing_dpids)
+        if recovered_state is None:
+            _LOGGER.debug(
+                "Powered-device state recovery returned no data from %s",
+                self.device.ip_address,
+            )
+            return state_data
+
+        return {**state_data, **recovered_state}
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from device."""
         try:
@@ -369,6 +414,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
             state_data = await self._async_get_local_state()
+            state_data = await self._async_add_missing_powered_state(state_data)
             if (
                 getattr(self, "_entry", None)
                 and self._entry.data.get("ip_address") != self.device.ip_address
@@ -379,8 +425,9 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
             # The APK uses attr:[1] for sensor status and attr:[0] for the
-            # complete property state of powered products. Do not synthesize
-            # per-DPID reads the APK does not send.
+            # complete property state of powered products. Some metering
+            # products omit advertised fields from that response, so recovery
+            # performs one narrow request only for those absent fields.
             state_data = self._preserve_environment_measurements(state_data)
             _LOGGER.debug(f"[COZYLIFE] Successfully fetched state for {self.device.ip_address}: {state_data}")
             return state_data
