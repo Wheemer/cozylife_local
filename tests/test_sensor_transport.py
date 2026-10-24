@@ -540,7 +540,7 @@ def test_udp_discovery_and_sleeping_sensor_wake_probe_are_separate() -> None:
     from cozylife_local.coordinator import SENSOR_WAKE_PROBE_INTERVAL_SECONDS
 
     assert background_discovery.DISCOVERY_BROADCAST_INTERVAL_SECONDS == 10.0
-    assert SENSOR_WAKE_PROBE_INTERVAL_SECONDS == 0.5
+    assert SENSOR_WAKE_PROBE_INTERVAL_SECONDS == 0.25
 
 
 def test_shared_udp_discovery_uses_the_apk_daemon_cadence() -> None:

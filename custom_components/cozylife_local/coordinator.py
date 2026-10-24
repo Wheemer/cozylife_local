@@ -18,7 +18,7 @@ _UPDATE_LOGGER.setLevel(logging.INFO)
 
 # These are local attempt bounds, not a claimed sensor wake or report schedule.
 SENSOR_CONNECT_TIMEOUT_SECONDS = 0.2
-SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.5
+SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.25
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
