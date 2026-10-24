@@ -3,7 +3,8 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .background_discovery import async_get_background_discovery
@@ -140,6 +141,40 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # unrelated host-side timer.
         await self.async_request_refresh()
 
+    @callback
+    def _async_migrate_placeholder_entity_unique_ids(
+        self, old_device_id: str, new_device_id: str
+    ) -> None:
+        """Keep entity IDs when a sleeping sensor gains its verified device ID."""
+        prefix = f"{old_device_id}_"
+        registry = er.async_get(self.hass)
+        for registry_entry in er.async_entries_for_config_entry(
+            registry, self._entry.entry_id
+        ):
+            old_unique_id = registry_entry.unique_id
+            if not old_unique_id.startswith(prefix):
+                continue
+
+            new_unique_id = f"{new_device_id}_{old_unique_id.removeprefix(prefix)}"
+            existing_entity_id = registry.async_get_entity_id(
+                registry_entry.domain,
+                registry_entry.platform,
+                new_unique_id,
+            )
+            if existing_entity_id not in (None, registry_entry.entity_id):
+                _LOGGER.warning(
+                    "Keeping CozyLife entity %s on placeholder identity because "
+                    "the verified identity is already used by %s",
+                    registry_entry.entity_id,
+                    existing_entity_id,
+                )
+                continue
+
+            registry.async_update_entity(
+                registry_entry.entity_id,
+                new_unique_id=new_unique_id,
+            )
+
     async def _async_promote_sensor_identity(self) -> None:
         """Replace a sleeping-sensor setup ID after a verified local handshake.
 
@@ -186,6 +221,10 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             }
             if self.device.dpid:
                 data["dpids"] = self.device.dpid
+            if old_device_id:
+                self._async_migrate_placeholder_entity_unique_ids(
+                    old_device_id, device_id
+                )
             self.hass.config_entries.async_update_entry(self._entry, data=data)
 
             discovery = await async_get_background_discovery(self.hass)
