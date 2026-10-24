@@ -958,8 +958,15 @@ def test_powered_property_query_uses_apk_complete_property_frame() -> None:
             writer.write(
                 (json.dumps({
                     "cmd": 2,
-                    "sn": "full-property-event",
-                    "msg": {"data": {"1": True, "4": 50}},
+                    "sn": "unrelated-state-event",
+                    "msg": {"data": {"28": 12}},
+                }) + "\r\n").encode()
+            )
+            writer.write(
+                (json.dumps({
+                    "cmd": 2,
+                    "sn": request["sn"],
+                    "msg": {"data": {"1": True, "27": 240, "29": 230}},
                 }) + "\r\n").encode()
             )
             await writer.drain()
@@ -969,7 +976,7 @@ def test_powered_property_query_uses_apk_complete_property_frame() -> None:
         server = await asyncio.start_server(handler, "127.0.0.1", 5555)
         device = CozyLifeDevice("127.0.0.1", timeout=1.0)
         try:
-            assert await device.async_get_properties() == {"1": True, "4": 50}
+            assert await device.async_get_properties() == {"1": True, "27": 240, "29": 230}
         finally:
             await device.async_close()
             server.close()

@@ -389,8 +389,12 @@ class CozyLifeDevice:
         return await self._async_get_state([1])
 
     async def async_get_properties(self) -> Optional[Dict[str, Any]]:
-        """Request the APK's complete local property payload for a powered device."""
-        return await self._async_get_state([0])
+        """Read a powered-device property response correlated to its request."""
+        message = await self._send_receive(CMD_QUERY, {"attr": [0]})
+        state_data = message.get("data") if isinstance(message, dict) else None
+        if not isinstance(state_data, dict):
+            return None
+        return {str(key): value for key, value in state_data.items()}
 
     async def _async_get_state(self, attributes: list[int]) -> Optional[Dict[str, Any]]:
         """Request the selected APK state payload and await its state frame."""
