@@ -630,6 +630,40 @@ def test_shared_udp_listener_routes_a_known_did_without_a_second_socket() -> Non
     asyncio.run(exercise())
 
 
+def test_registering_a_known_device_routes_the_cached_address() -> None:
+    """A just-configured device can use the UDP presence already received."""
+    background_discovery = _load_background_discovery()
+
+    async def exercise() -> None:
+        received: list[str] = []
+
+        async def handle_address(ip_address: str) -> None:
+            received.append(ip_address)
+
+        service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
+        service.hass = types.SimpleNamespace(async_create_task=asyncio.create_task)
+        service._devices = {
+            "plug-1": (
+                background_discovery.UdpDiscoveredDevice(
+                    device_id="plug-1",
+                    ip_address="10.0.0.42",
+                    pid="hjk1jk",
+                    device_type_code="05",
+                ),
+                0.0,
+            )
+        }
+        service._entry_callbacks = {}
+        service._pending_discovery_ids = set()
+
+        service.register_device("plug-1", "entry-1", handle_address)
+        await asyncio.sleep(0)
+
+        assert received == ["10.0.0.42"]
+
+    asyncio.run(exercise())
+
+
 def test_shared_udp_listener_creation_is_serialized() -> None:
     """Concurrent entry setup must not create two UDP receive sockets."""
     background_discovery = _load_background_discovery()
