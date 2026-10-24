@@ -53,6 +53,7 @@ def _load_coordinator():
     config_entries.ConfigEntry = object
     config_entries.SOURCE_INTEGRATION_DISCOVERY = "integration_discovery"
     helpers = types.ModuleType("homeassistant.helpers")
+    entity_registry = types.ModuleType("homeassistant.helpers.entity_registry")
     update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
 
     class DataUpdateCoordinator:
@@ -71,6 +72,7 @@ def _load_coordinator():
     update_coordinator.UpdateFailed = RuntimeError
     sys.modules["homeassistant.config_entries"] = config_entries
     sys.modules["homeassistant.helpers"] = helpers
+    sys.modules["homeassistant.helpers.entity_registry"] = entity_registry
     sys.modules["homeassistant.helpers.update_coordinator"] = update_coordinator
     from cozylife_local.coordinator import CozyLifeCoordinator
 
@@ -538,7 +540,7 @@ def test_udp_discovery_and_sleeping_sensor_wake_probe_are_separate() -> None:
     from cozylife_local.coordinator import SENSOR_WAKE_PROBE_INTERVAL_SECONDS
 
     assert background_discovery.DISCOVERY_BROADCAST_INTERVAL_SECONDS == 10.0
-    assert SENSOR_WAKE_PROBE_INTERVAL_SECONDS == 0.5
+    assert SENSOR_WAKE_PROBE_INTERVAL_SECONDS == 0.25
 
 
 def test_shared_udp_discovery_uses_the_apk_daemon_cadence() -> None:
@@ -1479,6 +1481,9 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
 
         def update_entry(updated_entry, *, data) -> None:
             updated_entry.data = data
+            assert migrated_entity_ids == [
+                ("sleeping_sensor_Z4tRml_10.0.0.115", "76608860c4d7fdd94485")
+            ]
             updates.append(data)
 
         coordinator.hass = types.SimpleNamespace(
@@ -1514,6 +1519,10 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
             return discovery
 
         coordinator._identity_refresh_task = object()
+        migrated_entity_ids: list[tuple[str, str]] = []
+        coordinator._async_migrate_placeholder_entity_unique_ids = (
+            lambda old_id, new_id: migrated_entity_ids.append((old_id, new_id))
+        )
 
         with patch("cozylife_local.coordinator.async_get_background_discovery", get_discovery):
             await coordinator._async_promote_sensor_identity()
@@ -1526,6 +1535,9 @@ def test_sleeping_sensor_promotes_verified_local_device_id() -> None:
                 "device_type_code": "02",
                 "dpids": ["4", "8", "9", "14"],
             }
+        ]
+        assert migrated_entity_ids == [
+            ("sleeping_sensor_Z4tRml_10.0.0.115", "76608860c4d7fdd94485")
         ]
         assert unregistered == [
             ("sleeping_sensor_Z4tRml_10.0.0.115", "sensor-entry")
@@ -1652,3 +1664,53 @@ def test_udp_discovery_only_starts_one_pending_flow_per_did() -> None:
         service._handle_device(device)
 
     assert calls == [True]
+
+def test_sensor_identity_migration_preserves_existing_entity_ids() -> None:
+    """Verified sensor IDs retain user-owned entity IDs and avoid collisions."""
+    CozyLifeCoordinator = _load_coordinator()
+    old_device_id = "sleeping_sensor_Z4tRml_10.0.0.115"
+    new_device_id = "76608860c4d7fdd94485"
+    entries = [
+        types.SimpleNamespace(
+            entity_id="sensor.spikes_temperature",
+            unique_id=f"{old_device_id}_temperature",
+            domain="sensor",
+            platform="cozylife_local",
+        ),
+        types.SimpleNamespace(
+            entity_id="sensor.spikes_humidity",
+            unique_id=f"{old_device_id}_humidity",
+            domain="sensor",
+            platform="cozylife_local",
+        ),
+        types.SimpleNamespace(
+            entity_id="sensor.unrelated",
+            unique_id="unrelated_temperature",
+            domain="sensor",
+            platform="cozylife_local",
+        ),
+    ]
+    updates: list[tuple[str, str]] = []
+    registry = types.SimpleNamespace(
+        async_get_entity_id=lambda domain, platform, unique_id: (
+            "sensor.existing_humidity"
+            if (domain, platform, unique_id)
+            == ("sensor", "cozylife_local", f"{new_device_id}_humidity")
+            else None
+        ),
+        async_update_entity=lambda entity_id, *, new_unique_id: updates.append(
+            (entity_id, new_unique_id)
+        ),
+    )
+    coordinator_module = sys.modules["cozylife_local.coordinator"]
+    coordinator_module.er = types.SimpleNamespace(
+        async_get=lambda _hass: registry,
+        async_entries_for_config_entry=lambda _registry, _entry_id: entries,
+    )
+    coordinator = object.__new__(CozyLifeCoordinator)
+    coordinator.hass = object()
+    coordinator._entry = types.SimpleNamespace(entry_id="sensor-entry")
+
+    coordinator._async_migrate_placeholder_entity_unique_ids(
+        old_device_id, new_device_id
+    )
