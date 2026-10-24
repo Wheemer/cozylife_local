@@ -151,6 +151,9 @@ class CozyLifeBackgroundDiscovery:
         """Route later APK UDP replies for one configured DID to its entry."""
         self._pending_discovery_ids.discard(device_id)
         self._entry_callbacks[device_id] = (entry_id, callback)
+        cached = getattr(self, "_devices", {}).get(device_id)
+        if cached is not None:
+            self.hass.async_create_task(callback(cached[0].ip_address))
 
     def unregister_device(self, device_id: str, entry_id: str) -> None:
         """Stop routing replies only when this entry owns the registration."""

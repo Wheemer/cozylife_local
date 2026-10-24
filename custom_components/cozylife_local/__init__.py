@@ -182,19 +182,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
     hass.async_create_task(coordinator.async_start_discovery())
 
-    if coordinator.is_sensor or entry.data.get("announced_via_udp", False):
-        # Do not block setup for a UDP-announced device. The APK accepts the
-        # announcement identity first; a local reply is not a prerequisite for
-        # adding it. A powered device is refreshed by its next matching UDP
-        # announcement, which avoids probing it outside the announcement
-        # window. This is intentionally separate from sensor wake probing.
-        #
-        # A sleeping sensor also begins unavailable. The coordinator
-        # keeps the configured local address available for wake-window probes;
-        # UDP discovery independently refreshes that address when a matching
-        # reply arrives.
+    if discovery is not None:
+        # The APK sends local Wi-Fi TCP only for an address present in its UDP
+        # cache. Configured entries therefore begin unavailable and refresh
+        # when their matching announcement is routed, including a cached
+        # announcement already received during setup.
         coordinator.async_set_updated_data({})
     else:
+        # Preserve a usable manual path if Home Assistant could not create the
+        # UDP listener at all.
         await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
