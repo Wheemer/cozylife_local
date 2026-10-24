@@ -1349,14 +1349,14 @@ def test_environment_report_accepts_a_valid_partial_measurement() -> None:
     assert not coordinator._has_valid_environment_measurements({"4": 0})
 
 
-def test_powered_udp_announcement_does_not_query_device() -> None:
-    """A powered device refreshes its address without a discovery-triggered query."""
+def test_powered_udp_announcement_queues_one_gated_refresh() -> None:
+    """A powered device refreshes only after a matching UDP announcement."""
     CozyLifeCoordinator = _load_coordinator()
 
     async def exercise() -> None:
         coordinator = object.__new__(CozyLifeCoordinator)
         updates: list[dict] = []
-        status_writes: list[bool] = []
+        refreshes: list[bool] = []
         entry = types.SimpleNamespace(data={"ip_address": "10.0.0.44"})
 
         def update_entry(_entry, *, data) -> None:
@@ -1372,47 +1372,17 @@ def test_powered_udp_announcement_does_not_query_device() -> None:
         async def update_ip_address(ip_address: str) -> bool:
             return ip_address == "10.0.0.45"
 
-        async def send_status() -> bool:
-            status_writes.append(True)
-            return True
+        async def refresh() -> None:
+            refreshes.append(True)
 
         coordinator.device.async_update_ip_address = update_ip_address
-        coordinator.device.async_send_status = send_status
+        coordinator.async_request_refresh = refresh
 
         await coordinator.async_handle_discovered_address("10.0.0.44")
         await coordinator.async_handle_discovered_address("10.0.0.45")
 
-        assert status_writes == []
+        assert refreshes == [True, True]
         assert updates == [{"ip_address": "10.0.0.45"}]
-
-    asyncio.run(exercise())
-
-
-def test_powered_device_recovery_uses_vendor_retry_cadence() -> None:
-    """Powered-device retries remain independent from UDP announcements."""
-    CozyLifeCoordinator = _load_coordinator()
-
-    async def exercise() -> None:
-        coordinator = object.__new__(CozyLifeCoordinator)
-        refreshes: list[bool] = []
-        delays: list[float] = []
-
-        async def refresh() -> None:
-            refreshes.append(True)
-
-        async def sleep(delay: float) -> None:
-            delays.append(delay)
-            raise asyncio.CancelledError
-
-        coordinator.async_request_refresh = refresh
-        with patch("cozylife_local.coordinator.asyncio.sleep", sleep):
-            try:
-                await coordinator._async_refresh_powered_device()
-            except asyncio.CancelledError:
-                pass
-
-        assert refreshes == [True]
-        assert delays == [60.0]
 
     asyncio.run(exercise())
 
