@@ -9,9 +9,9 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
-    EntityCategory,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    EntityCategory,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfEnergy,
@@ -26,13 +26,14 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
-    SENSOR_TEMPERATURE,
-    SENSOR_HUMIDITY,
-    SENSOR_BATTERY,
-    PLUG_ENERGY,
+    PLUG_ADDED_ENERGY,
     PLUG_CURRENT,
+    PLUG_ENERGY,
     PLUG_POWER,
     PLUG_VOLTAGE,
+    SENSOR_BATTERY,
+    SENSOR_HUMIDITY,
+    SENSOR_TEMPERATURE,
 )
 from .coordinator import CozyLifeCoordinator
 
@@ -64,8 +65,9 @@ async def async_setup_entry(
             entities.append(CozyLifeBatterySensor(coordinator, config_entry))
 
     if coordinator.classification.supports_plug_metering:
-        plug_sensor_descriptions = [
-            PlugSensorDescription(
+        energy_description = None
+        if PLUG_ENERGY in dpids:
+            energy_description = PlugSensorDescription(
                 dpid=PLUG_ENERGY,
                 key="total_energy",
                 name="Total energy",
@@ -73,7 +75,20 @@ async def async_setup_entry(
                 state_class=SensorStateClass.TOTAL_INCREASING,
                 native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
                 scale=1000,
-            ),
+            )
+        elif PLUG_ADDED_ENERGY in dpids:
+            energy_description = PlugSensorDescription(
+                dpid=PLUG_ADDED_ENERGY,
+                key="energy",
+                name="Energy",
+                device_class=SensorDeviceClass.ENERGY,
+                state_class=SensorStateClass.TOTAL_INCREASING,
+                native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+                scale=1000,
+            )
+
+        plug_sensor_descriptions = [
+            *([energy_description] if energy_description is not None else []),
             PlugSensorDescription(
                 dpid=PLUG_CURRENT,
                 key="current",

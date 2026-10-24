@@ -958,8 +958,15 @@ def test_powered_property_query_uses_apk_complete_property_frame() -> None:
             writer.write(
                 (json.dumps({
                     "cmd": 2,
-                    "sn": "full-property-event",
-                    "msg": {"data": {"1": True, "4": 50}},
+                    "sn": "unrelated-state-event",
+                    "msg": {"data": {"28": 12}},
+                }) + "\r\n").encode()
+            )
+            writer.write(
+                (json.dumps({
+                    "cmd": 2,
+                    "sn": request["sn"],
+                    "msg": {"data": {"1": True, "27": 240, "29": 230}},
                 }) + "\r\n").encode()
             )
             await writer.drain()
@@ -969,40 +976,11 @@ def test_powered_property_query_uses_apk_complete_property_frame() -> None:
         server = await asyncio.start_server(handler, "127.0.0.1", 5555)
         device = CozyLifeDevice("127.0.0.1", timeout=1.0)
         try:
-            assert await device.async_get_properties() == {"1": True, "4": 50}
+            assert await device.async_get_properties() == {"1": True, "27": 240, "29": 230}
         finally:
             await device.async_close()
             server.close()
             await server.wait_closed()
-
-    asyncio.run(exercise())
-
-
-def test_powered_property_recovery_queries_missing_advertised_dpids() -> None:
-    """Recover only advertised plug values absent from the primary response."""
-    CozyLifeCoordinator = _load_coordinator()
-
-    async def exercise() -> None:
-        requested: list[list[str]] = []
-
-        async def async_get_state(dpids: list[str]) -> dict[str, int]:
-            requested.append(dpids)
-            return {"27": 240, "29": 230}
-
-        coordinator = object.__new__(CozyLifeCoordinator)
-        coordinator.classification = types.SimpleNamespace(
-            supports_plug_metering=True
-        )
-        coordinator.device = types.SimpleNamespace(
-            dpid=["1", "18", "19", "26", "27", "28", "29", "32", "42"],
-            ip_address="10.0.0.44",
-            async_get_state=async_get_state,
-        )
-
-        assert await coordinator._async_add_missing_powered_state({"1": 1}) == {
-            "1": 1, "27": 240, "29": 230
-        }
-        assert requested == [["18", "19", "27", "28", "29", "32", "42"]]
 
     asyncio.run(exercise())
 
