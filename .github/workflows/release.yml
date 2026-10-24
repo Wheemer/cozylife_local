@@ -67,7 +67,7 @@ jobs:
             changes="$(
               git log --format='%s' --no-merges "${previous_tag}..${GITHUB_SHA}" \
                 | sed \
-                    -e '/^Prepare [0-9][0-9.]* prerelease$/d' \
+                    -e '/^Prepare [0-9][0-9.]*\(-[0-9]\+\)\? prerelease$/d' \
                     -e '/^Generate useful release notes automatically$/d' \
                     -e '/^Harden CI, releases, and catalog automation$/d' \
                     -e '/^Disable duplicate Dependabot updates on fork$/d' \
