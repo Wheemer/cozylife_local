@@ -1421,12 +1421,12 @@ def test_wifi_catalogue_flag_wins_over_misleading_contact_sensor_name() -> None:
     assert model.product_id in LOCAL_BINARY_SENSOR_PIDS
 
 
-def test_platforms_exclude_home_assistant_schedule_emulation() -> None:
-    """Keep scheduling in Home Assistant automations, not this integration."""
+def test_platforms_include_upstream_schedule_controls() -> None:
+    """Retain the upstream Home Assistant-backed schedule platform."""
     _load_api()
     from cozylife_local.const import PLATFORMS
 
-    assert "time" not in PLATFORMS
+    assert "time" in PLATFORMS
 
 
 def test_all_catalogued_wifi_speakers_get_a_media_player() -> None:

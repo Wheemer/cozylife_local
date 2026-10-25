@@ -10,8 +10,15 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, PLUG_OVERCURRENT_PROTECTION
 from .coordinator import CozyLifeCoordinator
+from .schedule import (
+    DEFAULT_SCHEDULE_ID,
+    SCHEDULE_MANAGER,
+    CozyLifeScheduleManager,
+)
 from .switch_options import (
     supported_dpids,
+    supports_light_schedule_options,
+    supports_schedule_options,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,6 +60,8 @@ async def async_setup_entry(
         or has_energy_output_controls
         or has_light_power_memory
         or (coordinator.classification.is_gateway and "2" in dpids)
+        or supports_schedule_options(coordinator)
+        or supports_light_schedule_options(coordinator)
     ):
         _LOGGER.debug(
             "Device %s (Type: %s, Source: %s) does not support switch entities, "
@@ -86,6 +95,11 @@ async def async_setup_entry(
     if coordinator.classification.supports_plug_metering:
         if PLUG_OVERCURRENT_PROTECTION in dpids:
             entities.append(CozyLifePlugBooleanSwitch(coordinator))
+
+    if supports_schedule_options(coordinator):
+        entities.append(CozyLifePlugScheduleEnabledSwitch(coordinator))
+    if supports_light_schedule_options(coordinator):
+        entities.append(CozyLifeLightScheduleEnabledSwitch(coordinator))
 
     if coordinator.classification.is_gateway and "2" in dpids:
         entities.append(
@@ -345,3 +359,82 @@ class CozyLifePlugBooleanSwitch(
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         self.async_write_ha_state()
+
+class CozyLifePlugScheduleSwitchBase(SwitchEntity):
+    """Base class for Home Assistant backed schedule switches."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self,
+        coordinator: CozyLifeCoordinator,
+        schedule_id: str = DEFAULT_SCHEDULE_ID,
+    ) -> None:
+        self.coordinator = coordinator
+        self._schedule_id = schedule_id
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device.device_id)},
+            name=self.coordinator.device.device_model_name,
+            manufacturer="CozyLife",
+            model=self.coordinator.device.pid,
+        )
+
+    @property
+    def _manager(self) -> CozyLifeScheduleManager:
+        return self.coordinator.hass.data[DOMAIN][SCHEDULE_MANAGER]
+
+
+class CozyLifePlugScheduleEnabledSwitch(CozyLifePlugScheduleSwitchBase):
+    """Enable the default plug schedule."""
+
+    _attr_icon = "mdi:calendar-check"
+    _entity_domain = "switch"
+    _unique_suffix = "schedule_enabled"
+
+    def __init__(
+        self,
+        coordinator: CozyLifeCoordinator,
+        schedule_id: str = DEFAULT_SCHEDULE_ID,
+    ) -> None:
+        super().__init__(coordinator, schedule_id)
+        self._attr_name = f"{coordinator.device.device_model_name} Schedule Enabled"
+        self._attr_unique_id = (
+            f"{coordinator.device.device_id}_{self._unique_suffix}"
+        )
+
+    @property
+    def is_on(self) -> bool:
+        schedule = self._manager.schedule_for_coordinator(
+            self.coordinator,
+            self._schedule_id,
+            entity_domain=self._entity_domain,
+        )
+        return bool(schedule.get("enabled", False))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._manager.async_update_coordinator_schedule(
+            self.coordinator,
+            self._schedule_id,
+            enabled=True,
+            entity_domain=self._entity_domain,
+        )
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._manager.async_update_coordinator_schedule(
+            self.coordinator,
+            self._schedule_id,
+            enabled=False,
+            entity_domain=self._entity_domain,
+        )
+        self.async_write_ha_state()
+
+
+class CozyLifeLightScheduleEnabledSwitch(CozyLifePlugScheduleEnabledSwitch):
+    """Enable the default light schedule."""
+
+    _entity_domain = "light"
+    _unique_suffix = "light_schedule_enabled"

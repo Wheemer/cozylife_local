@@ -14,6 +14,7 @@ from .const import DISCOVERY_CONTROLLER_ENTRY_TYPE, DOMAIN, PLATFORMS
 from .coordinator import CozyLifeCoordinator
 from .cozylife_api import CozyLifeDevice
 from .discovery import async_load_model_catalog
+from .schedule import SCHEDULE_MANAGER, async_setup_schedule_services
 
 _LOGGER = logging.getLogger(__name__)
 _DEBUG_ENTRY_IDS = "debug_entry_ids"
@@ -82,6 +83,7 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     """Set up the integration-wide UDP listener lifecycle."""
 
     hass.data.setdefault(DOMAIN, {})
+    await async_setup_schedule_services(hass)
     _async_schedule_discovery_controller(hass)
     try:
         await async_get_background_discovery(hass)
@@ -100,6 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Home Assistant calls async_setup before config entries, but retain this
     # harmless guard for direct setup/reload paths and isolated test harnesses.
     hass.data.setdefault(DOMAIN, {})
+    await async_setup_schedule_services(hass)
 
     # Debug logging is package-wide. Track every opted-in entry so setting up
     # a second, non-debug device cannot silently disable diagnostics for the
@@ -225,5 +228,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             service.unregister_address(entry.data.get("ip_address", ""))
         await coordinator.async_close()
         _remove_debug_entry(hass, entry.entry_id)
+        if not any(
+            isinstance(value, CozyLifeCoordinator)
+            for value in hass.data[DOMAIN].values()
+        ):
+            manager = hass.data[DOMAIN].pop(SCHEDULE_MANAGER, None)
+            if manager is not None:
+                await manager.async_unload()
 
     return unload_ok

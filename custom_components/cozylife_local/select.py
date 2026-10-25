@@ -13,8 +13,18 @@ from .const import (
     PLUG_POWER_ON_STATE,
 )
 from .coordinator import CozyLifeCoordinator
+from .schedule import (
+    ACTION_TURN_OFF,
+    ACTION_TURN_ON,
+    DEFAULT_SCHEDULE_ID,
+    SCHEDULE_MANAGER,
+    WEEKDAYS,
+    CozyLifeScheduleManager,
+)
 from .switch_options import (
     supported_dpids,
+    supports_light_schedule_options,
+    supports_schedule_options,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,6 +44,19 @@ LED_STATUS_OPTIONS = {
 }
 LED_STATUS_VALUES = {
     value: option for option, value in LED_STATUS_OPTIONS.items()
+}
+SCHEDULE_ACTION_OPTIONS = {
+    "Turn off": ACTION_TURN_OFF,
+    "Turn on": ACTION_TURN_ON,
+}
+SCHEDULE_ACTION_VALUES = {
+    value: option for option, value in SCHEDULE_ACTION_OPTIONS.items()
+}
+SCHEDULE_REPEAT_OPTIONS = {
+    "Once": [],
+    "Every day": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "Weekdays": ["mon", "tue", "wed", "thu", "fri"],
+    "Weekends": ["sat", "sun"],
 }
 AI_EXPRESSION_OPTIONS = {
     "Happy": 1,
@@ -69,6 +92,22 @@ async def async_setup_entry(
             entities.append(CozyLifePowerOnStateSelect(coordinator))
         if PLUG_LED_STATUS in dpids:
             entities.append(CozyLifeLedStatusSelect(coordinator))
+        if supports_schedule_options(coordinator):
+            entities.extend(
+                [
+                    CozyLifePlugScheduleActionSelect(coordinator),
+                    CozyLifePlugScheduleRepeatSelect(coordinator),
+                ]
+            )
+    if coordinator.classification.is_light and supports_light_schedule_options(
+        coordinator
+    ):
+        entities.extend(
+            [
+                CozyLifeLightScheduleActionSelect(coordinator),
+                CozyLifeLightScheduleRepeatSelect(coordinator),
+            ]
+        )
     if (
         coordinator.classification.is_ai_expression_device
         and "211" in (coordinator.device.dpid or [])
@@ -236,3 +275,147 @@ class CozyLifeAiExpressionSelect(
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         self.async_write_ha_state()
+
+class CozyLifePlugScheduleActionSelect(SelectEntity):
+    """Default plug schedule action."""
+
+    _attr_icon = "mdi:calendar-clock"
+    _attr_options = list(SCHEDULE_ACTION_OPTIONS)
+    _entity_domain = "switch"
+    _unique_suffix = "schedule_action"
+    _name_suffix = "Schedule Action"
+
+    def __init__(
+        self,
+        coordinator: CozyLifeCoordinator,
+        schedule_id: str = DEFAULT_SCHEDULE_ID,
+    ) -> None:
+        self.coordinator = coordinator
+        self._schedule_id = schedule_id
+        self._attr_name = (
+            f"{coordinator.device.device_model_name} {self._name_suffix}"
+        )
+        self._attr_unique_id = (
+            f"{coordinator.device.device_id}_{self._unique_suffix}"
+        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device.device_id)},
+            name=self.coordinator.device.device_model_name,
+            manufacturer="CozyLife",
+            model=self.coordinator.device.pid,
+        )
+
+    @property
+    def _manager(self) -> CozyLifeScheduleManager:
+        return self.coordinator.hass.data[DOMAIN][SCHEDULE_MANAGER]
+
+    @property
+    def current_option(self) -> str:
+        schedule = self._manager.schedule_for_coordinator(
+            self.coordinator,
+            self._schedule_id,
+            entity_domain=self._entity_domain,
+        )
+        return SCHEDULE_ACTION_VALUES.get(
+            schedule.get("action"),
+            "Turn off",
+        )
+
+    async def async_select_option(self, option: str) -> None:
+        await self._manager.async_update_coordinator_schedule(
+            self.coordinator,
+            self._schedule_id,
+            action=SCHEDULE_ACTION_OPTIONS[option],
+            entity_domain=self._entity_domain,
+        )
+        self.async_write_ha_state()
+
+
+class CozyLifePlugScheduleRepeatSelect(SelectEntity):
+    """Default plug schedule repeat preset."""
+
+    _attr_icon = "mdi:calendar-repeat"
+    _attr_options = list(SCHEDULE_REPEAT_OPTIONS)
+    _entity_domain = "switch"
+    _unique_suffix = "schedule_repeat"
+    _name_suffix = "Schedule Repeat"
+
+    def __init__(
+        self,
+        coordinator: CozyLifeCoordinator,
+        schedule_id: str = DEFAULT_SCHEDULE_ID,
+    ) -> None:
+        self.coordinator = coordinator
+        self._schedule_id = schedule_id
+        self._attr_name = (
+            f"{coordinator.device.device_model_name} {self._name_suffix}"
+        )
+        self._attr_unique_id = (
+            f"{coordinator.device.device_id}_{self._unique_suffix}"
+        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device.device_id)},
+            name=self.coordinator.device.device_model_name,
+            manufacturer="CozyLife",
+            model=self.coordinator.device.pid,
+        )
+
+    @property
+    def _manager(self) -> CozyLifeScheduleManager:
+        return self.coordinator.hass.data[DOMAIN][SCHEDULE_MANAGER]
+
+    @property
+    def current_option(self) -> str:
+        schedule = self._manager.schedule_for_coordinator(
+            self.coordinator,
+            self._schedule_id,
+            entity_domain=self._entity_domain,
+        )
+        repeat = sorted(schedule.get("repeat", []), key=lambda day: WEEKDAYS[day])
+        for option, days in SCHEDULE_REPEAT_OPTIONS.items():
+            if repeat == days:
+                return option
+        return "Custom"
+
+    @property
+    def options(self) -> list[str]:
+        schedule = self._manager.schedule_for_coordinator(
+            self.coordinator,
+            self._schedule_id,
+            entity_domain=self._entity_domain,
+        )
+        repeat = sorted(schedule.get("repeat", []), key=lambda day: WEEKDAYS[day])
+        if repeat and repeat not in SCHEDULE_REPEAT_OPTIONS.values():
+            return [*self._attr_options, "Custom"]
+        return self._attr_options
+
+    async def async_select_option(self, option: str) -> None:
+        if option == "Custom":
+            return
+
+        await self._manager.async_update_coordinator_schedule(
+            self.coordinator,
+            self._schedule_id,
+            repeat=list(SCHEDULE_REPEAT_OPTIONS[option]),
+            entity_domain=self._entity_domain,
+        )
+        self.async_write_ha_state()
+
+class CozyLifeLightScheduleActionSelect(CozyLifePlugScheduleActionSelect):
+    """Default light schedule action."""
+
+    _entity_domain = "light"
+    _unique_suffix = "light_schedule_action"
+
+
+class CozyLifeLightScheduleRepeatSelect(CozyLifePlugScheduleRepeatSelect):
+    """Default light schedule repeat preset."""
+
+    _entity_domain = "light"
+    _unique_suffix = "light_schedule_repeat"
