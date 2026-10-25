@@ -116,6 +116,10 @@ When a wall switch reports the required option DPIDs, CozyLife Local exposes:
 *   **Power-on State** (`DPID 18`)
 *   **LED Status** (`DPID 19`)
 
+Supported Wi-Fi home-appliance profiles use the same documented `DPID 1`
+power control and are shown as a generic Home Assistant switch rather than as
+an invented appliance type.
+
 ### Metered Smart Plugs
 
 Metered plugs expose outlet control plus electricity sensors:
@@ -143,6 +147,43 @@ Recurring schedules are stored and run by Home Assistant. For compatible plugs, 
 Compatible smart bulbs and light strips expose local light controls plus:
 
 *   **Countdown** (`DPID 13`) exposed as the same seconds-based countdown number pattern used by compatible plugs
+*   **Power-off Memory** (`DPID 9`) as a configuration switch where reported
+
+The two APK-panel-verified AI-lamp profiles use this same local light entity.
+
+### Fans
+
+Supported Wi-Fi motor profiles create one native Home Assistant fan entity.
+
+*   **Power** (`DPID 1`)
+*   **Speed** using the reported speed profile (`DPID 16`, `4`, or `9`)
+*   **Wind Mode** (`DPID 11`) when reported, including Normal, Natural, Sleep, Forest, Maternal and infant, and AI smart
+
+### Sensors and Safety Devices
+
+Supported Wi-Fi sensor profiles expose only their documented local DPIDs:
+
+*   **Temperature**, **Humidity**, and **Battery** (`DPID 8`, `4`, and `9`)
+*   **Contact** (`DPID 7`), **Motion** (`DPID 6`), and **Moisture / Water Leak** (`DPID 10`) binary sensors where supported by the profile
+*   Wi-Fi multi-sensors combine the relevant temperature, humidity, battery, contact, and motion entities
+
+### Energy Storage and Gateways
+
+Supported energy-storage profiles expose the telemetry they advertise:
+
+*   **Battery Status**, **Battery**, **Battery Temperature**, **Fault Code**, and remaining usable/charging time
+*   **Total** and per-branch **Input/Output Power** sensors
+*   One **Output** switch for each documented output channel; an unknown bitmask never creates guessed channels
+
+Supported Wi-Fi gateway profiles expose **Discovery Mode** as a configuration switch when `DPID 2` is present.
+
+### Doorbells, Speakers, and AI Profiles
+
+Supported local video-state profiles expose **Call Active**, **Battery**, **Low Battery**, and **Motion** only where their documented DPIDs are advertised. Video streaming and lock control are not exposed.
+
+The two APK-panel-verified X7 Wi-Fi speaker profiles create a Home Assistant media player with **Power**, **Volume**, **Play/Pause**, and **Bluetooth**, **Local Playback**, or **Line-in** source selection. This is local media control, not voice-assistant support.
+
+The panel-verified S3 profile exposes an **Expression** select with Happy, Sad, Disappointed, Angry, and Surprised. Conversation controls are not exposed.
 
 ---
 
