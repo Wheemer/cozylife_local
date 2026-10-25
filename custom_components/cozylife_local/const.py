@@ -11,6 +11,8 @@ BRIGHT = '4'
 HUE = '5'
 SAT = '6'
 LIGHT_COUNTDOWN = '13'
+LIGHT_NORMAL_TIMER = '14'
+LIGHT_NORMAL_TIMER = '14'
 
 # Sensor DPIDs (temperature/humidity sensor, PID=Z4tRml)
 SENSOR_TEMPERATURE = '8'   # raw value ÷ 10 = °C
@@ -23,6 +25,8 @@ KNOWN_SENSOR_PIDS = {'Z4tRml'}
 
 # Electrician / smart plug DPIDs
 PLUG_COUNTDOWN = '2'        # countdown/timer, seconds
+PLUG_TIMER_SCHEDULE = '3'   # encoded native one-shot schedule payload
+PLUG_TIMER_SCHEDULE = '3'   # encoded native one-shot schedule payload
 PLUG_POWER_ON_STATE = '18'  # relay restore behavior after power loss, enum
 PLUG_LED_STATUS = '19'      # indicator LED behavior, enum
 PLUG_ADDED_ENERGY = '26'    # add_ele; not the lifetime consumption counter
@@ -47,6 +51,7 @@ PLATFORMS = [
     "fan",
     "number",
     "select",
+    "time",
 ]
 
 DEFAULT_MIN_KELVIN = 2000
