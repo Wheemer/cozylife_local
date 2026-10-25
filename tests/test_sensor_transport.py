@@ -563,6 +563,43 @@ def test_udp_discovery_and_sleeping_sensor_wake_probe_are_separate() -> None:
     assert SENSOR_WAKE_PROBE_INTERVAL_SECONDS == 0.25
 
 
+def test_partial_powered_report_reads_only_missing_advertised_dpids() -> None:
+    """A successful attr:[0] reply cannot suppress current or voltage reads."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        requested: list[list[str]] = []
+
+        async def async_get_state(dpids: list[str]) -> None:
+            requested.append(dpids)
+
+        coordinator = object.__new__(CozyLifeCoordinator)
+        coordinator._uses_sensor_polling = False
+        coordinator.classification = types.SimpleNamespace(
+            supports_plug_metering=True
+        )
+        coordinator.device = types.SimpleNamespace(
+            dpid=["1", "2", "26", "27", "28", "29", "42", "72"],
+            async_get_state=async_get_state,
+        )
+        coordinator._powered_followup_task = None
+        coordinator.hass = types.SimpleNamespace(
+            async_create_background_task=lambda coroutine, _name: asyncio.create_task(
+                coroutine
+            )
+        )
+
+        coordinator._async_request_missing_powered_state(
+            {"1": True, "2": 0, "26": 1, "28": 3, "42": 2, "72": 0}
+        )
+        await asyncio.sleep(0)
+
+        assert requested == [["27", "29"]]
+        assert coordinator._powered_followup_task is None
+
+    asyncio.run(exercise())
+
+
 def test_shared_udp_discovery_uses_the_apk_daemon_cadence() -> None:
     """Shared UDP discovery follows the APK daemon, not sensor wake probing."""
     background_discovery = _load_background_discovery()
