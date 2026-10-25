@@ -38,36 +38,22 @@ meaning and a safe Home Assistant entity mapping.
   published DPID documentation yet. Once recovered from their panel source,
   the integration will add only entities that match verified local behavior.
 
-## Product-audit queue
+## Product-audit boundary
 
-Every Wi-Fi category in the APK catalogue is in scope. The current audit has
-separated products with verified local semantics from products whose controls
-are still opaque:
+The bundled catalogue is refreshed separately from integration releases, so
+this document intentionally does not publish fixed profile counts. A profile
+is supported only where the current catalogue, APK/panel evidence, and local
+entity mapping agree. Catalogue refreshes do not automatically add entities.
 
-- Electrical: 288 of 292 Wi-Fi profiles have verified entities; the four
-  remaining profiles advertise no actionable DPID.
-- Lights (334), motors (4), and home appliances (7) have verified local
-  entities.
-- Sensors: all 15 Wi-Fi profiles have documented entities. One is labelled a
-  Zigbee door magnet, but the APK's authoritative transport flag is Wi-Fi and
-  it shares the documented local contact profile with the other door magnets.
-- Energy: 13 of 15 Wi-Fi profiles expose documented telemetry. The 12 full
-  profiles that advertise branch-output power DPIDs also expose the matching
-  DPID-1 output bits as local switches. The other two advertise only a
-  bit-mask output DPID without a channel map, so no channels are invented.
-- Gateways: the one Wi-Fi profile has a documented discovery-mode entity.
-- Camera & lock: 10 of 43 profiles advertise the verified video-state DPID
-  set. The remaining lock and camera controls await a verified local/session
-  protocol.
-- DIY: all three Wi-Fi profiles expose only opaque DPID-51 JSON.
-- Smart speaker (2): both Wi-Fi X7 profiles have APK-panel-backed local media
-  players. Power, volume, play/pause, and source selection are exposed.
-- AI conversation (32): two AI-lamp profiles have panel-verified local light
-  controls, and the S3 profile has a panel-verified expression selector. The
-  remaining conversational controls stay in the evidence queue: their panel
-  services are downloaded from the CozyLife API, and no local entity is
-  invented until that panel source is obtained and traced.
-- Outdoor travel has no Wi-Fi profiles in this APK catalogue.
+The current evidence boundary is:
+
+- Electrical, lights, motors, home appliances, sensors, energy storage,
+  gateways, verified video-state profiles, X7 speakers, the two AI-lamp
+  profiles, and the S3 expression profile have the mappings described above.
+- DIY/passthrough DPID 51 payloads, lock actuation, video streaming, and
+  untraced AI conversation controls remain deliberately unsupported.
+- A catalogue entry that is marked Wi-Fi is still not enough to expose an
+  entity: its DPID meaning and local behavior must be independently verified.
 
 ## Powered-metering compatibility invariant
 
@@ -85,8 +71,7 @@ unless it preserves all of the following:
   `res:0` as proof that every advertised DPID was returned.
 - Retain the complete fallback policy for currently exposed powered entities:
   power-on state, LED status, overcurrent protection, Current, timer status,
-  Voltage, and light countdown. Deliberately excluded schedule controls remain
-  outside that policy because the integration no longer exposes schedules.
+  Voltage, light countdown, and the supported schedule capability.
 - Expose DPID 26 (**Energy**) independently from DPID 42 (**Total energy**)
   when both are advertised; neither entity may suppress the other.
 - Before release, compare the powered-device DPID and fallback path against
@@ -103,11 +88,12 @@ fallback is limited to DPIDs already advertised by the local product catalogue.
 | Switch configuration | 18 power-on state, 19 LED status, 32 overcurrent protection |
 | Plug telemetry/options | 27 Current, 29 Voltage, 72 timer status |
 | Light configuration | 13 countdown |
+| Schedule capability | 3 plug timer profile; 13/14 light schedule profile |
 
-The old DPID 3 schedule fallback is deliberately absent: schedules and their
-time/select/service surfaces were removed from the integration scope. All
-other powered fallback fields from the prior working implementation remain
-covered by the listener-safe, catalogue-backed mechanism above.
+Schedule controls are retained where their documented capability is present.
+Recurring schedules are Home Assistant-backed. On supported plugs, a one-time
+turn-off schedule may also synchronize to the native DPID 3 timer; this does
+not turn DPID 3 into a generic schedule protocol for every product.
 
 ## Transport rule
 
