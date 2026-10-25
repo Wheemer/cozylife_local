@@ -202,9 +202,7 @@ class CozyLifeBackgroundDiscovery:
             route = "provisional address"
         if callback is not None:
             _LOGGER.debug(
-                "Routing CozyLife UDP announcement for DID %s at %s by %s",
-                device.device_id,
-                device.ip_address,
+                "Routing CozyLife UDP announcement by %s",
                 route,
             )
             self.hass.async_create_task(callback(device.ip_address))
@@ -213,23 +211,17 @@ class CozyLifeBackgroundDiscovery:
         if self._is_configured(device.device_id, device.ip_address):
             self._pending_discovery_ids.discard(device.device_id)
             _LOGGER.debug(
-                "Ignoring CozyLife UDP announcement for already configured DID %s at %s",
-                device.device_id,
-                device.ip_address,
+                "Ignoring CozyLife UDP announcement for an already configured device",
             )
             return
         if device.device_id in self._pending_discovery_ids:
             _LOGGER.debug(
-                "Ignoring repeated CozyLife discovery announcement for pending DID %s at %s",
-                device.device_id,
-                device.ip_address,
+                "Ignoring repeated CozyLife discovery announcement for a pending device",
             )
             return
         self._pending_discovery_ids.add(device.device_id)
         _LOGGER.debug(
-            "Creating CozyLife discovery flow for DID %s at %s",
-            device.device_id,
-            device.ip_address,
+            "Creating CozyLife discovery flow",
         )
         self._async_start_discovery_flow(device)
 
@@ -262,8 +254,7 @@ class CozyLifeBackgroundDiscovery:
             )
         except Exception:  # pragma: no cover - Home Assistant owns flow errors.
             _LOGGER.exception(
-                "Unable to start a discovery flow for CozyLife device %s",
-                device.device_id,
+                "Unable to start a CozyLife discovery flow",
             )
 
 

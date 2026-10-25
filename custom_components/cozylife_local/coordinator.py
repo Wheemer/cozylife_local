@@ -11,6 +11,7 @@ from .background_discovery import async_get_background_discovery
 from .const import SENSOR_HUMIDITY, SENSOR_TEMPERATURE
 from .cozylife_api import CozyLifeDevice
 from .discovery import classify_device
+from .debug import summarize_dpids
 
 _LOGGER = logging.getLogger(__name__)
 _UPDATE_LOGGER = logging.getLogger(f"{__name__}.updates")
@@ -163,10 +164,8 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if existing_entity_id not in (None, registry_entry.entity_id):
                 _LOGGER.warning(
-                    "Keeping CozyLife entity %s on placeholder identity because "
-                    "the verified identity is already used by %s",
-                    registry_entry.entity_id,
-                    existing_entity_id,
+                    "Keeping a CozyLife entity on placeholder identity because "
+                    "the verified identity is already in use",
                 )
                 continue
 
@@ -190,8 +189,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return
             if self.device.pid != expected_pid:
                 _LOGGER.warning(
-                    "Ignoring local identity from %s: expected PID %s, got %s",
-                    self.device.ip_address,
+                    "Ignoring local identity: expected PID %s, got %s",
                     expected_pid,
                     self.device.pid,
                 )
@@ -238,8 +236,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.async_handle_discovered_address,
             )
             _LOGGER.info(
-                "Verified local device ID for sleeping CozyLife sensor at %s",
-                self.device.ip_address,
+                "Verified local device ID for sleeping CozyLife sensor",
             )
         finally:
             self._identity_refresh_task = None
@@ -296,9 +293,8 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "cozylife sensor identity verification",
             )
         _LOGGER.debug(
-            "[COZYLIFE] Received local state report from persistent socket %s: %s",
-            self.device.ip_address,
-            received_state,
+            "[COZYLIFE] Received local state report with DPIDs: %s",
+            summarize_dpids(received_state),
         )
 
     def _preserve_environment_measurements(
@@ -328,20 +324,14 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ):
                 sanitized[dpid] = previous
                 _LOGGER.debug(
-                    "[COZYLIFE] Ignoring invalid %s reading from %s: %r; "
-                    "preserving previous value %r",
+                    "[COZYLIFE] Ignoring invalid %s reading; preserving the previous value",
                     name,
-                    self.device.ip_address,
-                    current,
-                    previous,
                 )
             elif dpid in sanitized:
                 sanitized.pop(dpid)
                 _LOGGER.debug(
-                    "[COZYLIFE] Ignoring invalid %s reading from %s: %r",
+                    "[COZYLIFE] Ignoring invalid %s reading",
                     name,
-                    self.device.ip_address,
-                    current,
                 )
 
         return sanitized
@@ -365,11 +355,11 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._uses_sensor_polling:
             state_data = await self.device.async_get_status()
             if state_data is None:
-                raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
+                raise UpdateFailed("Failed to query state from CozyLife device")
             return state_data
 
         if not await self.device.async_request_properties():
-            raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
+            raise UpdateFailed("Failed to query state from CozyLife device")
         # Powered-device frames are delivered asynchronously to the listener.
         # Preserve the last complete state until the next frame arrives.
         return dict(self.data or {})
@@ -382,7 +372,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 and not await self.device.async_update_device_info()
             ):
                 raise UpdateFailed(
-                    f"Failed to get full device info for {self.device.ip_address}"
+                    "Failed to get full device info for CozyLife device"
                 )
 
             state_data = await self._async_get_local_state()
@@ -399,7 +389,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # product state. Both are delivered as listener frames and may be
             # partial.
             state_data = self._preserve_environment_measurements(state_data)
-            _LOGGER.debug(f"[COZYLIFE] Successfully fetched state for {self.device.ip_address}: {state_data}")
+            _LOGGER.debug("[COZYLIFE] Successfully fetched state with DPIDs: %s", summarize_dpids(state_data))
             return state_data
 
         except UpdateFailed:
@@ -410,5 +400,5 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise
 
         except Exception as err:
-            _LOGGER.error(f"Error communicating with device {self.device.ip_address}: {err}")
-            raise UpdateFailed(f"Error communicating with device {self.device.ip_address}: {err}") from err
+            _LOGGER.error("Error communicating with CozyLife device: %s", type(err).__name__)
+            raise UpdateFailed("Error communicating with CozyLife device") from err
