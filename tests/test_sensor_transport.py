@@ -41,9 +41,29 @@ def test_connection_refusal_is_retained_for_diagnostics() -> None:
         with patch("asyncio.open_connection", refuse):
             assert await device.async_send_status() is False
 
-        assert device.last_transport_error == "ConnectionRefusedError: [Errno 111] Connection refused"
+        assert device.last_transport_error == "ConnectionRefusedError"
 
     asyncio.run(exercise())
+
+
+def test_debug_frame_summary_excludes_identity_and_values() -> None:
+    """Public debug output keeps protocol shape but no private frame content."""
+    _load_api()
+    from cozylife_local.debug import summarize_frame
+
+    summary = summarize_frame(
+        b'{"cmd":2,"sn":"private-sequence","did":"private-device-id",'
+        b'"ip":"192.168.1.23","token":"private-token",'
+        b'"msg":{"attr":[0],"data":{"27":240,"29":230}}}'
+    )
+
+    assert summary == {
+        "cmd": 2,
+        "msg": {"attr": [0], "data_dpids": ["27", "29"]},
+    }
+    assert "private" not in repr(summary)
+    assert "192.168.1.23" not in repr(summary)
+    assert "240" not in repr(summary)
 
 
 def _load_coordinator():

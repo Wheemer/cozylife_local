@@ -6,6 +6,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 from .discovery import get_model_info
+from .debug import summarize_frame
 
 _LOGGER = logging.getLogger(__name__)
 _RAW_LOGGER = logging.getLogger(f"{__name__}.raw")
@@ -97,7 +98,7 @@ class CozyLifeDevice:
             return False
         await self.async_close()
         self._ip_address = ip_address
-        _LOGGER.info("CozyLife device %s moved to %s", self._device_id, ip_address)
+        _LOGGER.info("CozyLife device address refreshed")
         return True
 
     def restore_from_cache(self, device_id: str, pid: str, device_type_code: str, dpids: List[str]) -> None:
@@ -127,23 +128,14 @@ class CozyLifeDevice:
             if self._writer and not self._writer.is_closing():
                 return
             try:
-                _RAW_LOGGER.debug(
-                    "Opening persistent CozyLife socket to %s:%s",
-                    self._ip_address,
-                    COZYLIFE_PORT,
-                )
+                _RAW_LOGGER.debug("Opening persistent CozyLife socket")
                 reader, writer = await asyncio.wait_for(
                     asyncio.open_connection(self._ip_address, COZYLIFE_PORT),
                     timeout=self._timeout,
                 )
             except (asyncio.TimeoutError, ConnectionRefusedError, OSError) as err:
-                self._last_transport_error = f"{type(err).__name__}: {err}"
-                _RAW_LOGGER.debug(
-                    "Could not open CozyLife socket to %s:%s: %r",
-                    self._ip_address,
-                    COZYLIFE_PORT,
-                    err,
-                )
+                self._last_transport_error = type(err).__name__
+                _RAW_LOGGER.debug("Could not open CozyLife socket: %s", type(err).__name__)
                 self._disconnect()
                 raise
 
@@ -154,11 +146,7 @@ class CozyLifeDevice:
                 name=f"cozylife-reader-{self._ip_address}",
             )
             self._last_transport_error = None
-            _RAW_LOGGER.debug(
-                "Connected persistent CozyLife socket at %s:%s",
-                self._ip_address,
-                COZYLIFE_PORT,
-            )
+            _RAW_LOGGER.debug("Connected persistent CozyLife socket")
 
     def _disconnect(self) -> None:
         """Close the socket and release callers waiting for a response."""
@@ -202,19 +190,15 @@ class CozyLifeDevice:
             while True:
                 raw_frame = await reader.readline()
                 if not raw_frame:
-                    _RAW_LOGGER.debug(
-                        "Persistent CozyLife socket at %s:%s reached EOF",
-                        self._ip_address,
-                        COZYLIFE_PORT,
-                    )
+                    _RAW_LOGGER.debug("Persistent CozyLife socket reached EOF")
                     return
                 try:
                     frame = json.loads(raw_frame.decode("utf8").strip())
                 except (json.JSONDecodeError, UnicodeDecodeError) as err:
-                    _LOGGER.warning("Invalid frame from %s: %s", self._ip_address, err)
+                    _LOGGER.warning("Invalid CozyLife frame: %s", type(err).__name__)
                     continue
 
-                _RAW_LOGGER.debug("Received from %s: %r", self._ip_address, raw_frame)
+                _RAW_LOGGER.debug("Received CozyLife frame: %s", summarize_frame(raw_frame))
                 sent_sn = frame.get("sn")
                 future = self._pending_responses.pop(sent_sn, None)
                 if future and not future.done():
@@ -241,11 +225,10 @@ class CozyLifeDevice:
                             await result
                     except Exception:  # noqa: BLE001 - listener is integration code.
                         _LOGGER.exception(
-                            "Error dispatching CozyLife frame from %s",
-                            self._ip_address,
+                            "Error dispatching CozyLife frame",
                         )
         except (ConnectionError, OSError) as err:
-            _LOGGER.debug("Persistent connection to %s ended: %s", self._ip_address, err)
+            _LOGGER.debug("Persistent CozyLife connection ended: %s", type(err).__name__)
         finally:
             if self._reader is reader and self._writer is writer:
                 self._disconnect()
@@ -262,13 +245,13 @@ class CozyLifeDevice:
             response = asyncio.get_running_loop().create_future()
             self._pending_responses[sent_sn] = response
             encoded_message = (json.dumps(message, separators=(",", ":")) + "\r\n").encode("utf8")
-            _RAW_LOGGER.debug("Sending to %s: %r", self._ip_address, encoded_message)
+            _RAW_LOGGER.debug("Sending CozyLife frame: %s", summarize_frame(encoded_message))
             writer.write(encoded_message)
             await writer.drain()
             try:
                 return await asyncio.wait_for(asyncio.shield(response), timeout=self._timeout)
             except asyncio.TimeoutError:
-                _LOGGER.warning("Timeout waiting for response with sn %s from %s", sent_sn, self._ip_address)
+                _LOGGER.warning("Timeout waiting for a CozyLife response")
                 # A persistent socket whose peer stopped answering is not a
                 # usable transport for the next request.  Discard it so the
                 # next attempt performs a clean local reconnect.
@@ -277,12 +260,7 @@ class CozyLifeDevice:
             finally:
                 self._pending_responses.pop(sent_sn, None)
         except (asyncio.TimeoutError, ConnectionRefusedError, OSError) as err:
-            _RAW_LOGGER.debug(
-                "CozyLife status request transport failure for %s:%s: %r",
-                self._ip_address,
-                COZYLIFE_PORT,
-                err,
-            )
+            _RAW_LOGGER.debug("CozyLife request transport failure: %s", type(err).__name__)
             self._disconnect()
             return None
 
@@ -303,7 +281,7 @@ class CozyLifeDevice:
             encoded_message = (
                 json.dumps(message, separators=(",", ":")) + "\r\n"
             ).encode("utf8")
-            _RAW_LOGGER.debug("Sending to %s: %r", self._ip_address, encoded_message)
+            _RAW_LOGGER.debug("Sending CozyLife frame: %s", summarize_frame(encoded_message))
             writer.write(encoded_message)
             await writer.drain()
             return True
@@ -339,7 +317,7 @@ class CozyLifeDevice:
         # Step 1: Get basic device info (did, pid, dtp)
         info_msg = await self._send_receive(CMD_INFO, {})
         if not info_msg or not all(k in info_msg for k in ['did', 'pid', 'dtp']):
-            _LOGGER.warning(f"Device info query failed or missing critical fields: {info_msg}")
+            _LOGGER.warning("Device info query failed or omitted required fields")
             return False
 
         self._device_id = info_msg['did']
@@ -358,15 +336,13 @@ class CozyLifeDevice:
             if query_msg and ('attr' in query_msg or 'data' in query_msg):
                 break
             _LOGGER.debug(
-                "DPID query attempt %s/%s failed for %s: %s",
+                "DPID query attempt %s/%s failed",
                 attempt,
                 DPID_QUERY_ATTEMPTS,
-                self._ip_address,
-                query_msg,
             )
 
         if not query_msg:
-            _LOGGER.warning(f"Failed to query DPID list from device: {query_msg}")
+            _LOGGER.warning("Failed to query DPID list from CozyLife device")
             # We can still proceed with a minimal setup if this fails
             self._dpid = []
             return True # Return true as we have the basic info
@@ -379,8 +355,10 @@ class CozyLifeDevice:
             self._dpid = []
 
         _LOGGER.info(
-            f"Successfully discovered device {self._ip_address} locally: "
-            f"DID={self.device_id}, PID={self.pid}, Type={self.device_type_code}, DPIDs={self.dpid}"
+            "Successfully discovered CozyLife device locally: PID=%s, Type=%s, DPIDs=%s",
+            self.pid,
+            self.device_type_code,
+            self.dpid,
         )
         return True
 
@@ -445,7 +423,7 @@ class CozyLifeDevice:
             encoded_message = (
                 json.dumps(message, separators=(",", ":")) + "\r\n"
             ).encode("utf8")
-            _RAW_LOGGER.debug("Sending to %s: %r", self._ip_address, encoded_message)
+            _RAW_LOGGER.debug("Sending CozyLife frame: %s", summarize_frame(encoded_message))
             writer.write(encoded_message)
             await writer.drain()
 
@@ -459,8 +437,7 @@ class CozyLifeDevice:
                 return state_data or None
             except asyncio.TimeoutError:
                 _LOGGER.warning(
-                    "Timeout waiting for an APK-style state frame from %s",
-                    self._ip_address,
+                    "Timeout waiting for an APK-style CozyLife state frame",
                 )
                 return None
             finally:
