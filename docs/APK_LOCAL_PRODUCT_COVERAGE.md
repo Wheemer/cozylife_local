@@ -71,7 +71,7 @@ unless it preserves all of the following:
   `res:0` as proof that every advertised DPID was returned.
 - Retain the complete fallback policy for currently exposed powered entities:
   power-on state, LED status, overcurrent protection, Current, timer status,
-  Voltage, light countdown, and the supported schedule capability.
+  Voltage, and light countdown.
 - Expose DPID 26 (**Energy**) independently from DPID 42 (**Total energy**)
   when both are advertised; neither entity may suppress the other.
 - Before release, compare the powered-device DPID and fallback path against
@@ -88,12 +88,11 @@ fallback is limited to DPIDs already advertised by the local product catalogue.
 | Switch configuration | 18 power-on state, 19 LED status, 32 overcurrent protection |
 | Plug telemetry/options | 27 Current, 29 Voltage, 72 timer status |
 | Light configuration | 13 countdown |
-| Schedule capability | 3 plug timer profile; 13/14 light schedule profile |
 
-Schedule controls are retained where their documented capability is present.
-Recurring schedules are Home Assistant-backed. On supported plugs, a one-time
-turn-off schedule may also synchronize to the native DPID 3 timer; this does
-not turn DPID 3 into a generic schedule protocol for every product.
+The CozyLife app uses DPID 3 for its native timer records on compatible plugs.
+CozyLife Local intentionally leaves those records untouched; Home Assistant
+automations, Schedule helpers, and Timer helpers are the supported scheduling
+path.
 
 ## Transport rule
 

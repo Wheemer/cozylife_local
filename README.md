@@ -55,7 +55,7 @@ We are still looking for reports to expand coverage for:
 *   🔊 **Local Speaker Control**: The APK-catalogued Wi-Fi X7 speaker profiles expose local power, volume, play/pause, and Bluetooth, local-playback, or line-in source controls through one Home Assistant media player.
 *   💡 **State & Color-Mode Safeguards**: Smooth transitions and automatic work-mode state preservation prevents smart lights from glitching or flashing dark blue during custom RGB commands.
 *   🕒 **Light Countdowns**: Exposes validated local countdown controls on compatible bulbs.
-*   📅 **Schedules**: Restores conditional plug and light schedule entities, Home Assistant-backed recurring schedules, and supported native one-shot plug timer synchronization.
+*   🗓️ **Home Assistant Scheduling**: Use Home Assistant automations, Schedule helpers, or Timer helpers for timed control. CozyLife Local does not create a second per-device scheduler.
 
 ---
 
@@ -136,11 +136,9 @@ Compatible plugs can also expose:
 *   **LED Status** (`DPID 19`)
 *   **Overcurrent Protection** (`DPID 32`)
 
-### Schedules
+### Scheduling
 
-Schedule controls appear only on compatible profiles: plug schedules require the supported DPID 3 timer profile, while light schedules require DPID 13 or 14. The integration provides Schedule Enabled, Schedule Time, Schedule Action, and Schedule Repeat entities where applicable, plus `set_*_schedule` and `clear_*_schedule` services.
-
-Recurring schedules are stored and run by Home Assistant. For compatible plugs, a one-time **turn-off** schedule can also be synchronized to the documented native timer; Home Assistant remains responsible for recurring schedules and unsupported timer actions.
+Use Home Assistant automations, Schedule helpers, or Timer helpers for recurring and one-time control. CozyLife Local does not create per-device schedule entities or write to/clear the CozyLife app's native DPID 3 timer records. Timers configured in the CozyLife app are left unchanged.
 
 ### Smart Lights
 
@@ -195,7 +193,7 @@ CozyLife devices report their functionalities via standard Data Point IDs (DPIDs
 |------|-----------------|-------------|
 | `1` | Power / Switch Bitmask | Master light power, plug power, or multi-gang rocker state bitmask. |
 | `2` | Work Mode / Plug Countdown | Light profile settings on bulbs or the countdown control on compatible plugs. |
-| `3` | Color Temperature / Plug Timer | White-light warmth on compatible lights; encoded native one-shot timer payload on supported plugs. |
+| `3` | Color Temperature / App Timer Records | White-light warmth on compatible lights; native timer records managed by the CozyLife app on compatible plugs. |
 | `4` | Brightness / Humidity | Light intensity scaling on compatible lights or relative humidity on sensors. |
 | `5` | Hue | 360-degree color hue control on addressable RGB lights. |
 | `6` | Saturation | Color saturation percentage on RGB lights. |

@@ -12,12 +12,12 @@ A **100% local** Home Assistant integration for supported CozyLife-compatible Wi
 *   📈 **High-Fidelity Power Monitoring**: Automatically exposes real-time Voltage, Current, Power, and Cumulative Energy (kWh) sensors on metered smart plugs.
 *   💡 **Smart Lighting Enhancements**: Smooth color transitions, custom color-temperature Kelvin ranges, and color state safeguards to prevent hardware glitches.
 *   🔋 **Sleeping Sensor Handling**: Uses the saved UDP identity for supported sleeping temperature/humidity sensors instead of requiring a second synchronous TCP response during setup.
-*   📅 **Conditional Schedule Controls**: Provides Home Assistant-backed plug and light schedules where the verified local device profile supports them.
+*   🗓️ **Home Assistant Scheduling**: Use Home Assistant automations, Schedule helpers, or Timer helpers without CozyLife Local creating a second device scheduler.
 
 ---
 
 ### Resources
 
-*   📖 **[Detailed Setup & Troubleshooting Guide](https://github.com/soulripper13/cozylife_local/blob/main/docs/SETUP_GUIDE.md)**: Discovery, safe diagnostics, sleeping sensors, schedules, and network settings.
+*   📖 **[Detailed Setup & Troubleshooting Guide](https://github.com/soulripper13/cozylife_local/blob/main/docs/SETUP_GUIDE.md)**: Discovery, safe diagnostics, sleeping sensors, scheduling, and network settings.
 *   🔎 **[APK Local Product Coverage](https://github.com/soulripper13/cozylife_local/blob/main/docs/APK_LOCAL_PRODUCT_COVERAGE.md)**: Verified entity mappings and the evidence boundary for unsupported controls.
 *   🐞 **[GitHub Repository & Issue Tracker](https://github.com/soulripper13/cozylife_local)**: Report bugs or device compatibility findings without sharing local IP addresses or device IDs.

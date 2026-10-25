@@ -25,8 +25,9 @@ def test_documentation_describes_current_transport_and_schedule_behavior() -> No
     assert "every 10 seconds" in setup
     assert "250 ms" in readme
     assert "250 ms" in setup
-    assert "no longer exposes schedules" not in coverage
-    assert "Recurring schedules are Home Assistant-backed" in coverage
+    assert "does not create per-device schedule entities" in readme
+    assert "write to/clear the CozyLife app's native DPID 3" in readme
+    assert "intentionally leaves those records untouched" in coverage
     for heading in (
         "### Fans",
         "### Sensors and Safety Devices",

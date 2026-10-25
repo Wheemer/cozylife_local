@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import sys
 import types
@@ -1421,12 +1422,12 @@ def test_wifi_catalogue_flag_wins_over_misleading_contact_sensor_name() -> None:
     assert model.product_id in LOCAL_BINARY_SENSOR_PIDS
 
 
-def test_platforms_include_upstream_schedule_controls() -> None:
-    """Retain the upstream Home Assistant-backed schedule platform."""
+def test_platforms_do_not_register_duplicate_schedule_controls() -> None:
+    """Do not create a parallel device scheduler."""
     _load_api()
     from cozylife_local.const import PLATFORMS
 
-    assert "time" in PLATFORMS
+    assert "time" not in PLATFORMS
 
 
 def test_all_catalogued_wifi_speakers_get_a_media_player() -> None:
@@ -1837,3 +1838,82 @@ def test_sensor_identity_migration_preserves_existing_entity_ids() -> None:
     coordinator._async_migrate_placeholder_entity_unique_ids(
         old_device_id, new_device_id
     )
+
+
+def test_schedule_entity_migration_removes_only_retired_entities() -> None:
+    """Upgrade cleanup removes retired scheduler entities without broad deletion."""
+    _load_api()
+    config_entries = types.ModuleType("homeassistant.config_entries")
+    config_entries.ConfigEntry = object
+    config_entries.SOURCE_IMPORT = "import"
+    homeassistant_const = types.ModuleType("homeassistant.const")
+    homeassistant_const.EVENT_HOMEASSISTANT_STARTED = "started"
+    core = sys.modules["homeassistant.core"]
+    core.CoreState = types.SimpleNamespace(running="running")
+
+    background_discovery = types.ModuleType("cozylife_local.background_discovery")
+    background_discovery.DATA_DISCOVERY_SERVICE = "discovery"
+    background_discovery.async_get_background_discovery = lambda _hass: None
+    coordinator = types.ModuleType("cozylife_local.coordinator")
+    coordinator.CozyLifeCoordinator = object
+    discovery = types.ModuleType("cozylife_local.discovery")
+    discovery.async_load_model_catalog = lambda _hass: None
+
+    registry_entries = {
+        "switch.plug_schedule_enabled": types.SimpleNamespace(
+            config_entry_id="entry-1",
+            platform="cozylife_local",
+            unique_id="plug-1_schedule_enabled",
+        ),
+        "select.plug_schedule_action": types.SimpleNamespace(
+            config_entry_id="entry-1",
+            platform="cozylife_local",
+            unique_id="plug-1_schedule_action",
+        ),
+        "switch.plug_power": types.SimpleNamespace(
+            config_entry_id="entry-1",
+            platform="cozylife_local",
+            unique_id="plug-1_0",
+        ),
+        "switch.other_schedule": types.SimpleNamespace(
+            config_entry_id="other-entry",
+            platform="cozylife_local",
+            unique_id="plug-2_schedule_enabled",
+        ),
+    }
+    removed: list[str] = []
+    entity_registry = types.ModuleType("homeassistant.helpers.entity_registry")
+    entity_registry.async_get = lambda _hass: types.SimpleNamespace(
+        entities=registry_entries,
+        async_remove=removed.append,
+    )
+
+    sys.modules["homeassistant.config_entries"] = config_entries
+    sys.modules["homeassistant.const"] = homeassistant_const
+    sys.modules["homeassistant"].config_entries = config_entries
+    sys.modules["homeassistant"].const = homeassistant_const
+    helpers = types.ModuleType("homeassistant.helpers")
+    helpers.entity_registry = entity_registry
+    sys.modules["homeassistant.helpers"] = helpers
+    sys.modules["homeassistant.helpers.entity_registry"] = entity_registry
+    sys.modules["cozylife_local.background_discovery"] = background_discovery
+    sys.modules["cozylife_local.coordinator"] = coordinator
+    sys.modules["cozylife_local.discovery"] = discovery
+    spec = importlib.util.spec_from_file_location(
+        "cozylife_local",
+        COMPONENT_DIR / "__init__.py",
+        submodule_search_locations=[str(COMPONENT_DIR)],
+    )
+    assert spec is not None and spec.loader is not None
+    integration = importlib.util.module_from_spec(spec)
+    sys.modules["cozylife_local"] = integration
+    spec.loader.exec_module(integration)
+
+    integration._async_remove_obsolete_schedule_entities(
+        object(), types.SimpleNamespace(entry_id="entry-1")
+    )
+
+    assert removed == [
+        "switch.plug_schedule_enabled",
+        "select.plug_schedule_action",
+    ]
