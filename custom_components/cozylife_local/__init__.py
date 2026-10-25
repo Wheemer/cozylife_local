@@ -14,10 +14,21 @@ from .const import DISCOVERY_CONTROLLER_ENTRY_TYPE, DOMAIN, PLATFORMS
 from .coordinator import CozyLifeCoordinator
 from .cozylife_api import CozyLifeDevice
 from .discovery import async_load_model_catalog
-from .schedule import SCHEDULE_MANAGER, async_setup_schedule_services
 
 _LOGGER = logging.getLogger(__name__)
 _DEBUG_ENTRY_IDS = "debug_entry_ids"
+_OBSOLETE_SCHEDULE_UNIQUE_ID_SUFFIXES = frozenset(
+    {
+        "schedule_enabled",
+        "light_schedule_enabled",
+        "schedule_action",
+        "light_schedule_action",
+        "schedule_repeat",
+        "light_schedule_repeat",
+        "schedule_time",
+        "light_schedule_time",
+    }
+)
 
 
 def _refresh_debug_logging(hass: HomeAssistant) -> None:
@@ -34,6 +45,33 @@ def _remove_debug_entry(hass: HomeAssistant, entry_id: str) -> None:
     if isinstance(debug_entry_ids, set):
         debug_entry_ids.discard(entry_id)
     _refresh_debug_logging(hass)
+
+
+@callback
+def _async_remove_obsolete_schedule_entities(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Remove the retired integration-owned scheduler entities on upgrade.
+
+    These entities represented Home Assistant-side schedules and must disappear
+    without writing DPID 3 or otherwise changing timers configured in the
+    CozyLife app.
+    """
+    # Keep this import local so lightweight setup tests do not need to load the
+    # full entity-registry implementation.
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
+    for entity_id, registry_entry in list(registry.entities.items()):
+        if (
+            registry_entry.config_entry_id == entry.entry_id
+            and registry_entry.platform == DOMAIN
+            and any(
+                registry_entry.unique_id.endswith(f"_{suffix}")
+                for suffix in _OBSOLETE_SCHEDULE_UNIQUE_ID_SUFFIXES
+            )
+        ):
+            registry.async_remove(entity_id)
 
 
 async def _async_ensure_discovery_controller(hass: HomeAssistant) -> None:
@@ -83,7 +121,6 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     """Set up the integration-wide UDP listener lifecycle."""
 
     hass.data.setdefault(DOMAIN, {})
-    await async_setup_schedule_services(hass)
     _async_schedule_discovery_controller(hass)
     try:
         await async_get_background_discovery(hass)
@@ -102,8 +139,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Home Assistant calls async_setup before config entries, but retain this
     # harmless guard for direct setup/reload paths and isolated test harnesses.
     hass.data.setdefault(DOMAIN, {})
-    await async_setup_schedule_services(hass)
-
     # Debug logging is package-wide. Track every opted-in entry so setting up
     # a second, non-debug device cannot silently disable diagnostics for the
     # first one.
@@ -197,6 +232,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
+    _async_remove_obsolete_schedule_entities(hass, entry)
 
     # Set up platforms (light, switch, sensor, etc.)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -228,12 +264,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             service.unregister_address(entry.data.get("ip_address", ""))
         await coordinator.async_close()
         _remove_debug_entry(hass, entry.entry_id)
-        if not any(
-            isinstance(value, CozyLifeCoordinator)
-            for value in hass.data[DOMAIN].values()
-        ):
-            manager = hass.data[DOMAIN].pop(SCHEDULE_MANAGER, None)
-            if manager is not None:
-                await manager.async_unload()
-
     return unload_ok

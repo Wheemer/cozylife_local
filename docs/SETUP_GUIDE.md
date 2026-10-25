@@ -151,11 +151,9 @@ Battery-powered sensors can sleep between reports. When one answers the integrat
 
 The integration keeps the APK-derived local status transport available for valid reports, but does not configure a report interval or claim a fixed wake cadence. The device controls when it is available.
 
-### Schedules
+### Scheduling
 
-Schedule entities appear only for compatible device profiles. Compatible plugs expose schedule controls when the documented DPID 3 timer profile is present; compatible lights use DPID 13 or 14. The integration stores recurring schedules in Home Assistant. It can optionally synchronize a supported plug's one-time turn-off schedule to its native timer, but Home Assistant remains responsible for recurring schedules and unsupported timer actions.
-
-The available entities are Schedule Enabled, Schedule Time, Schedule Action, and Schedule Repeat. The same functions are available as `cozylife_local.set_plug_schedule`, `cozylife_local.clear_plug_schedule`, `cozylife_local.set_light_schedule`, and `cozylife_local.clear_light_schedule` services.
+Use Home Assistant automations, Schedule helpers, or Timer helpers for recurring and one-time control. CozyLife Local does not create per-device schedule entities and does not write to or clear the CozyLife app's native DPID 3 timer records. Existing timers configured in the CozyLife app are left unchanged.
 
 ---
 
