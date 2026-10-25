@@ -77,8 +77,10 @@ unless it preserves all of the following:
 
 - Keep previously received DPID state when a later listener report is partial.
 - For a supported plug, request only the catalogue-advertised metering and
-  option DPIDs omitted from the `attr:[0]` report.  Do not treat a successful
-  `res:0` as proof that every advertised DPID was returned.
+  option DPIDs omitted from the `attr:[0]` report. Merge the persisted DPID
+  cache with the verified APK catalogue profile first: a cache restored after
+  an update can itself be partial. Do not treat a successful `res:0` as proof
+  that every advertised DPID was returned.
 - Expose DPID 26 (**Energy**) independently from DPID 42 (**Total energy**)
   when both are advertised; neither entity may suppress the other.
 - Before release, compare the powered-device DPID and fallback path against

@@ -19,7 +19,7 @@ from .const import (
     SENSOR_TEMPERATURE,
 )
 from .cozylife_api import CozyLifeDevice
-from .discovery import classify_device
+from .discovery import classify_device, get_model_info
 from .debug import summarize_dpids
 
 _LOGGER = logging.getLogger(__name__)
@@ -334,7 +334,14 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ):
             return
 
+        # A cached inventory can itself be partial after an upgrade or restart.
+        # Preserve the original integration's catalogue merge: the APK profile
+        # is the verified local capability inventory for this known PID, while
+        # the live frame determines which of those capabilities are missing.
         advertised_dpids = set(self.device.dpid or [])
+        model_info = get_model_info(self.device.pid)
+        if model_info is not None:
+            advertised_dpids.update(model_info.dpids)
         missing_dpids = [
             dpid
             for dpid in POWERED_FOLLOWUP_DPIDS
