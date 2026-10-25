@@ -982,8 +982,8 @@ def test_state_query_accepts_apk_local_reply_with_a_different_sn() -> None:
     asyncio.run(exercise())
 
 
-def test_powered_property_query_uses_apk_complete_property_frame() -> None:
-    """Powered products request attr:[0], as the APK property path does."""
+def test_powered_property_query_uses_apk_listener_state_frame() -> None:
+    """Powered products deliver attr:[0] state through the listener."""
     CozyLifeDevice = _load_api()
 
     async def exercise() -> None:
@@ -991,6 +991,7 @@ def test_powered_property_query_uses_apk_complete_property_frame() -> None:
             request = json.loads((await reader.readline()).decode())
             assert request["cmd"] == 2
             assert request["msg"] == {"attr": [0]}
+            await asyncio.sleep(0.05)
             writer.write(
                 (json.dumps({
                     "cmd": 2,
@@ -998,21 +999,20 @@ def test_powered_property_query_uses_apk_complete_property_frame() -> None:
                     "msg": {"data": {"28": 12}},
                 }) + "\r\n").encode()
             )
-            writer.write(
-                (json.dumps({
-                    "cmd": 2,
-                    "sn": request["sn"],
-                    "msg": {"data": {"1": True, "27": 240, "29": 230}},
-                }) + "\r\n").encode()
-            )
             await writer.drain()
             writer.close()
             await writer.wait_closed()
 
         server = await asyncio.start_server(handler, "127.0.0.1", 5555)
-        device = CozyLifeDevice("127.0.0.1", timeout=1.0)
+        device = CozyLifeDevice("127.0.0.1", timeout=0.01)
+        received: list[dict] = []
+        device.set_message_listener(received.append)
         try:
-            assert await device.async_get_properties() == {"1": True, "27": 240, "29": 230}
+            assert await device.async_request_properties() is True
+            await asyncio.sleep(0.1)
+            assert received == [
+                {"cmd": 2, "sn": "unrelated-state-event", "msg": {"data": {"28": 12}}}
+            ]
         finally:
             await device.async_close()
             server.close()

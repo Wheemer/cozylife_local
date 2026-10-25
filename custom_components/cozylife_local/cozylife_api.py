@@ -388,13 +388,20 @@ class CozyLifeDevice:
         """Request APK status and await the next state frame, not a matching SN."""
         return await self._async_get_state([1])
 
-    async def async_get_properties(self) -> Optional[Dict[str, Any]]:
-        """Read a powered-device property response correlated to its request."""
-        message = await self._send_receive(CMD_QUERY, {"attr": [0]})
-        state_data = message.get("data") if isinstance(message, dict) else None
-        if not isinstance(state_data, dict):
-            return None
-        return {str(key): value for key, value in state_data.items()}
+    async def async_request_properties(self) -> bool:
+        """Request powered properties through the APK's listener-based path.
+
+        The CozyLife Wi-Fi client sends ``attr:[0]`` and routes the next local
+        state frame through the device listener. The local write is the request
+        completion; a later frame updates the coordinator independently.
+        """
+        if self._status_lock is None:
+            self._status_lock = asyncio.Lock()
+
+        async with self._status_lock:
+            return (
+                await self._async_request_state([0], wait_for_state=False)
+            ) is not None
 
     async def _async_get_state(self, attributes: list[int]) -> Optional[Dict[str, Any]]:
         """Request the selected APK state payload and await its state frame."""
