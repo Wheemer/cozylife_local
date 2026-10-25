@@ -8,7 +8,16 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .background_discovery import async_get_background_discovery
-from .const import SENSOR_HUMIDITY, SENSOR_TEMPERATURE
+from .const import (
+    PLUG_CURRENT,
+    PLUG_LED_STATUS,
+    PLUG_OVERCURRENT_PROTECTION,
+    PLUG_POWER_ON_STATE,
+    PLUG_TIMER_STATUS,
+    PLUG_VOLTAGE,
+    SENSOR_HUMIDITY,
+    SENSOR_TEMPERATURE,
+)
 from .cozylife_api import CozyLifeDevice
 from .discovery import classify_device
 from .debug import summarize_dpids
@@ -24,6 +33,14 @@ ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
 }
+POWERED_FOLLOWUP_DPIDS = (
+    PLUG_POWER_ON_STATE,
+    PLUG_LED_STATUS,
+    PLUG_CURRENT,
+    PLUG_TIMER_STATUS,
+    PLUG_VOLTAGE,
+    PLUG_OVERCURRENT_PROTECTION,
+)
 
 
 def _is_valid_environment_measurement(
@@ -84,6 +101,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.device = device
         self._sensor_probe_task: asyncio.Task[None] | None = None
         self._identity_refresh_task: asyncio.Task[None] | None = None
+        self._powered_followup_task: asyncio.Task[None] | None = None
         if self._uses_sensor_polling:
             # Bound a failed local attempt so a sleeping device cannot consume
             # the next half-second wake-window attempt.
@@ -283,6 +301,7 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             state_data = self._preserve_environment_measurements(state_data)
 
         self.async_set_updated_data(state_data)
+        self._async_request_missing_powered_state(received_state)
         if (
             self._uses_sensor_polling
             and self._entry.data.get("device_id", "").startswith("sleeping_sensor_")
@@ -296,6 +315,45 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "[COZYLIFE] Received local state report with DPIDs: %s",
             summarize_dpids(received_state),
         )
+
+    def _async_request_missing_powered_state(
+        self, received_state: dict[str, Any]
+    ) -> None:
+        """Request only advertised plug fields omitted by a state report.
+
+        The original local integration used this documented DPID query after a
+        partial plug state response. Keep it scoped to advertised plug fields;
+        it does not probe unknown product capabilities.
+        """
+        if (
+            self._uses_sensor_polling
+            or not getattr(
+                getattr(self, "classification", None), "supports_plug_metering", False
+            )
+            or getattr(self, "_powered_followup_task", None) is not None
+        ):
+            return
+
+        advertised_dpids = set(self.device.dpid or [])
+        missing_dpids = [
+            dpid
+            for dpid in POWERED_FOLLOWUP_DPIDS
+            if dpid in advertised_dpids and dpid not in received_state
+        ]
+        if not missing_dpids:
+            return
+
+        self._powered_followup_task = self.hass.async_create_background_task(
+            self._async_read_missing_powered_state(missing_dpids),
+            "cozylife powered DPID follow-up",
+        )
+
+    async def _async_read_missing_powered_state(self, dpids: list[str]) -> None:
+        """Issue one serialized read for advertised fields omitted by a frame."""
+        try:
+            await self.device.async_get_state(dpids)
+        finally:
+            self._powered_followup_task = None
 
     def _preserve_environment_measurements(
         self,

@@ -69,6 +69,25 @@ are still opaque:
   invented until that panel source is obtained and traced.
 - Outdoor travel has no Wi-Fi profiles in this APK catalogue.
 
+## Powered-metering compatibility invariant
+
+The APK establishes `cmd:2, attr:[0]` as the powered-product state request,
+but a successful response may be partial.  A transport change is incomplete
+unless it preserves all of the following:
+
+- Keep previously received DPID state when a later listener report is partial.
+- For a supported plug, request only the catalogue-advertised metering and
+  option DPIDs omitted from the `attr:[0]` report.  Do not treat a successful
+  `res:0` as proof that every advertised DPID was returned.
+- Expose DPID 26 (**Energy**) independently from DPID 42 (**Total energy**)
+  when both are advertised; neither entity may suppress the other.
+- Before release, compare the powered-device DPID and fallback path against
+  the last known working implementation (1.0.16), and test a partial response
+  that omits DPID 27 (Current) and DPID 29 (Voltage).
+
+This is an evidence-preservation rule, not a product-specific workaround: the
+fallback is limited to DPIDs already advertised by the local product catalogue.
+
 ## Transport rule
 
 The APK uses `cmd:2, attr:[1]` for sleeping-sensor status checks and
