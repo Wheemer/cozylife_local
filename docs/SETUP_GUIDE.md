@@ -19,7 +19,7 @@ To get the most out of your local smart home setup and avoid connection drops, f
    * [Smart Bulbs, Ceiling Lights & LED Strips](#smart-bulbs-ceiling-lights--led-strips)
    * [Sleeping Battery-Powered Sensors (Temp/Humidity)](#sleeping-battery-powered-sensors-temphumidity)
 5. [Network Troubleshooting & Router Tuning](#5-network-troubleshooting--router-tuning)
-6. [Analyzing Discovery Logs & Submitting New Models](#6-analyzing-discovery-logs--submitting-new-models)
+6. [Safe Diagnostics & Device Reports](#6-safe-diagnostics--device-reports)
 
 ---
 
@@ -27,9 +27,9 @@ To get the most out of your local smart home setup and avoid connection drops, f
 
 Before attempting to configure CozyLife Local, make sure you have:
 *   A fully functional **Home Assistant** instance.
-*   **HACS (Home Assistant Community Store)** installed.
-*   A **2.4 GHz Wi-Fi Network** (CozyLife devices do not support 5 GHz Wi-Fi).
-*   Administrative access to your home router to configure static IPs (highly recommended).
+*   **HACS (Home Assistant Community Store)** installed, if you want managed installation and updates. Manual ZIP installation is also supported.
+*   A Wi-Fi network compatible with your particular device. Many CozyLife Wi-Fi products use 2.4 GHz; follow the instructions for the hardware you own.
+*   Administrative access to your router if you want to create a DHCP reservation (optional, but useful for troubleshooting).
 *   The **CozyLife App** installed on your mobile phone (iOS or Android) for the initial Wi-Fi configuration.
 
 ---
@@ -39,13 +39,13 @@ Before attempting to configure CozyLife Local, make sure you have:
 ### Step 2.1: Onboarding with the CozyLife App
 
 > [!IMPORTANT]
-> Because CozyLife devices do not have an ethernet port, they must first be joined to your local Wi-Fi network using the official CozyLife app. This integration **cannot** perform the initial wireless pairing.
+> Most CozyLife Wi-Fi products must first be joined to the local network with the official CozyLife app. This integration **cannot** perform the initial wireless pairing. Follow the reset and pairing instructions supplied with your specific hardware.
 
 1. **Factory Reset the Device**: 
-   * **Switches/Plugs**: Press and hold the physical button for 5–7 seconds until the LED starts flashing rapidly.
-   * **Smart Lights**: Turn the physical light switch off and on 3 to 5 times sequentially until the light bulb flashes rapidly.
+   * **Switches/Plugs**: Follow the manufacturer's reset sequence; many use a long press until the LED flashes.
+   * **Smart Lights**: Follow the manufacturer's reset sequence; many use repeated power cycles until the bulb flashes.
 2. **Connect via CozyLife App**:
-   * Open the app, ensure your phone is connected to your **2.4 GHz Wi-Fi network** with Bluetooth enabled.
+   * Open the app and ensure your phone is connected to the network required by the device's pairing instructions.
    * Click **+** (Add Device) and follow the prompts to input your Wi-Fi credentials.
    * Once successfully added, you can control the device via the CozyLife app.
    * **Note**: Keep the device powered on and connected to the Wi-Fi.
@@ -54,10 +54,10 @@ Before attempting to configure CozyLife Local, make sure you have:
 
 ### Step 2.2: Assigning Static IPs / DHCP Reservations
 
-Local integration relies on sending network packets directly to your device's IP address. If your router restarts or lease times expire, standard DHCP may assign a new IP address to your CozyLife device, making it appear "Unavailable" in Home Assistant.
+The integration sends local traffic to each device's current IP address. When a configured device makes a later UDP/6095 announcement, the shared discovery listener refreshes that address automatically. A DHCP reservation is therefore optional, not a requirement for normal address changes.
 
 > [!TIP]
-> Setting up a **DHCP Reservation** (also known as a **Static IP reservation** or **IP binding**) in your router's settings is the most important step to guarantee long-term stability.
+> A **DHCP reservation** (also called a static IP reservation or IP binding) can still make router-side diagnosis easier, especially on networks that block broadcasts between segments.
 
 1. Log into your home router's admin portal (e.g., `192.168.1.1` or `192.168.0.1`).
 2. Navigate to the **DHCP Server / LAN / IP Reservation** settings page.
@@ -85,7 +85,7 @@ Look for hostnames representing popular IoT chips used by CozyLife. Common hostn
 *   `CozyLife_XXXXXX`
 
 #### Method C: Network Scanner Tools
-Use tools like **Angry IP Scanner** (PC/Mac) or **Fing** (Mobile App) to scan **TCP** port `5555`. CozyLife's APK-style local discovery is a separate **UDP** broadcast exchange on port `6095`; a TCP scan cannot substitute for that discovery exchange.
+Use tools like **Angry IP Scanner** (PC/Mac) or **Fing** (Mobile App) only as a supplementary reachability check. A TCP/5555 scan cannot substitute for CozyLife's UDP/6095 discovery, and a sleeping battery sensor may not accept a TCP connection while it is asleep.
 
 ---
 
@@ -97,9 +97,9 @@ Once your device is connected to Wi-Fi, add CozyLife Local to Home Assistant:
 Settings ➔ Devices & Services ➔ + Add Integration ➔ CozyLife Local
 ```
 
-Click **Submit**. The integration creates one persistent discovery controller with no IP address, CIDR, or sensor-profile fields. It sends the APK-style UDP/6095 discovery frame every 500 ms. A newly announced supported Wi-Fi device appears in Home Assistant's normal discovered-device card; click **Add** to create its entry from the captured DID, PID, and IP plus the APK model catalogue DPID profile. Adding does not require a synchronous TCP inventory reply.
+Click **Submit**. The integration creates one persistent discovery controller with no IP address, CIDR, or sensor-profile fields. It sends the APK-style UDP/6095 discovery frame at startup and then every 10 seconds. A newly announced supported Wi-Fi device appears in Home Assistant's normal discovered-device card; click **Add** to create its entry from the captured DID, PID, and IP plus the APK model catalogue DPID profile. Adding does not require a synchronous TCP inventory reply.
 
-For a supported sleeping temperature/humidity sensor, the same saved announcement creates the entry and then begins the 500 ms known-address status probing. It does not assume a fixed wake or report schedule.
+For a supported sleeping temperature/humidity sensor, the same saved announcement creates the entry and then begins 250 ms known-address status probing. This is a local connection-attempt cadence, not a claimed device wake or reporting schedule.
 
 After setup, the integration exposes the configured local IP address as a diagnostic sensor on the Home Assistant device page. Use that visible IP when checking DHCP reservations, router firewall rules, or direct port `5555` connectivity.
 
@@ -129,6 +129,8 @@ Our integration supports both standard on/off plugs and high-end smart plugs equ
     *   **Total Cumulative Energy** (kWh) - `sensor.cozylife_device_energy`
 *   **Home Assistant Energy Dashboard**: The energy entity (`sensor.cozylife_device_energy`) utilizes standard `device_class: energy` and `state_class: total_increasing`. You can directly add it to the Home Assistant Energy Dashboard to track historical consumption!
 
+If a compatible plug reports both DPID 26 (**Energy**) and DPID 42 (**Total energy**), the integration exposes them independently. Do not assume the two counters have the same source or reset behavior.
+
 ---
 
 ### Smart Bulbs, Ceiling Lights & LED Strips
@@ -149,6 +151,12 @@ Battery-powered sensors can sleep between reports. When one answers the integrat
 
 The integration keeps the APK-derived local status transport available for valid reports, but does not configure a report interval or claim a fixed wake cadence. The device controls when it is available.
 
+### Schedules
+
+Schedule entities appear only for compatible device profiles. Compatible plugs expose schedule controls when the documented DPID 3 timer profile is present; compatible lights use DPID 13 or 14. The integration stores recurring schedules in Home Assistant. It can optionally synchronize a supported plug's one-time turn-off schedule to its native timer, but Home Assistant remains responsible for recurring schedules and unsupported timer actions.
+
+The available entities are Schedule Enabled, Schedule Time, Schedule Action, and Schedule Repeat. The same functions are available as `cozylife_local.set_plug_schedule`, `cozylife_local.clear_plug_schedule`, `cozylife_local.set_light_schedule`, and `cozylife_local.clear_light_schedule` services.
+
 ---
 
 ## 5. Network Troubleshooting & Router Tuning
@@ -160,33 +168,28 @@ If you have completed setup but your devices keep dropping off or showing as `Un
 *   **TCP Port 5555**: Local device status and control use TCP port `5555`. Ensure that no internal firewall or parent-router rule blocks traffic between Home Assistant and the device IP range.
 *   **IP Ping Test**: A successful ping can confirm basic reachability, but a failed ping does not prove a CozyLife device is offline: devices may ignore ICMP and battery sensors can sleep between reports.
 
-## 6. Analyzing Discovery Logs & Submitting New Models
+## 6. Safe Diagnostics & Device Reports
 
 If your device is added but some entities are missing (e.g., a smart plug that doesn't show its metering data), we need to check the exact **Data Points (DPIDs)** the hardware reports.
 
 ### Step 1: Enable CozyLife Debug Logs
-Add the following configuration to your `configuration.yaml` file to capture raw device handshakes:
+Open the affected CozyLife Local config entry, choose **Configure**, and enable **Verbose integration debug logs**. Reproduce the issue, then turn the option off when finished.
 
-```yaml
-logger:
-  default: info
-  logs:
-    custom_components.cozylife_local: debug
-```
-
-Restart Home Assistant to apply the logging configuration.
+The integration summarizes protocol shape and DPID names only. It intentionally omits local IP addresses, device IDs, and raw state values from its debug output. You may also use Home Assistant's normal logger configuration if required, but do not publish private network details.
 
 ### Step 2: Locate the Handshake Log
-Go to `Settings ➔ System ➔ Logs` and search for `cozylife_local`. Look for the successful discovery line:
+Go to `Settings ➔ System ➔ Logs` and search for `cozylife_local`. Useful lines include local transport success or failure, discovery routing, and received DPID names:
 
 ```text
-Successfully discovered device 192.168.1.177 locally: DID=0011223344, PID=xyz987, Type=00, DPIDs=['1', '26', '27', '28', '29', '42']
-Detected 1 outlet entity/entities at 192.168.1.177 with DPIDs: ['1', '26', '27', '28', '29', '42']
+[COZYLIFE] Successfully fetched state with DPIDs: ['1', '2', '26', '27', '28', '29', '42']
+Received CozyLife frame: {'cmd': 2, 'res': 0, 'msg': {'attr': [1, 2, 26, 27, 28, 29, 42]}}
 ```
 
 ### Step 3: Open a GitHub Issue
 If the entity mappings are incorrect:
 1. Note your device model (e.g., Dual Socket, RGB Bulb model).
-2. Copy the **PID** (Product ID) and **DPIDs** array from your debug logs.
-3. Open an issue on our [GitHub Repository](https://github.com/soulripper13/cozylife_local/issues) using the "New Device Request" template.
-4. Developers will map the PID and DPIDs in the model catalog to expose the correct entities automatically in the next integration update!
+2. Include the **integration version**, device name/model, expected and actual entities, and the safe DPID list from the logs.
+3. Open an issue on our [GitHub Repository](https://github.com/soulripper13/cozylife_local/issues). There is no required issue template.
+4. Remove local IP addresses and device IDs from screenshots or any additional text before posting.
+
+Developers will compare the report against the bundled APK catalogue and verified local entity mappings. A catalogue entry alone does not guarantee that an unmapped local control is safe to expose.

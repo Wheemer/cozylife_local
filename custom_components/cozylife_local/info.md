@@ -1,6 +1,6 @@
 # CozyLife Local for Home Assistant
 
-An extremely fast, **100% local** Home Assistant integration for CozyLife-compatible smart devices. Enjoy secure, private, and ultra-responsive control of your switches, plugs, lights, and sensors without ever talking to the cloud!
+A **100% local** Home Assistant integration for supported CozyLife-compatible Wi-Fi devices. Control switches, plugs, lights, fans, sensors, and other verified APK-catalogued local profiles without a CozyLife cloud account.
 
 ---
 
@@ -11,11 +11,13 @@ An extremely fast, **100% local** Home Assistant integration for CozyLife-compat
 *   ⚡ **Low-Latency Switching**: Instant physical updates with automated bitmask handling for multi-gang switches (e.g. double or triple rocker wall switches).
 *   📈 **High-Fidelity Power Monitoring**: Automatically exposes real-time Voltage, Current, Power, and Cumulative Energy (kWh) sensors on metered smart plugs.
 *   💡 **Smart Lighting Enhancements**: Smooth color transitions, custom color-temperature Kelvin ranges, and color state safeguards to prevent hardware glitches.
-*   🔋 **Optimistic Deep-Sleep Handling**: Smart caching for battery-powered temperature/humidity sensors to prevent timeouts during setup while they are sleeping.
+*   🔋 **Sleeping Sensor Handling**: Uses the saved UDP identity for supported sleeping temperature/humidity sensors instead of requiring a second synchronous TCP response during setup.
+*   📅 **Conditional Schedule Controls**: Provides Home Assistant-backed plug and light schedules where the verified local device profile supports them.
 
 ---
 
 ### Resources
 
-*   📖 **[Detailed Setup & Troubleshooting Guide](https://github.com/soulripper13/cozylife_local/blob/main/docs/SETUP_GUIDE.md)**: Router advice, sleep sensor pairing, and network settings.
-*   🐞 **[GitHub Repository & Issue Tracker](https://github.com/soulripper13/cozylife_local)**: Report bugs, submit device requests, and contribute to the model catalog.
+*   📖 **[Detailed Setup & Troubleshooting Guide](https://github.com/soulripper13/cozylife_local/blob/main/docs/SETUP_GUIDE.md)**: Discovery, safe diagnostics, sleeping sensors, schedules, and network settings.
+*   🔎 **[APK Local Product Coverage](https://github.com/soulripper13/cozylife_local/blob/main/docs/APK_LOCAL_PRODUCT_COVERAGE.md)**: Verified entity mappings and the evidence boundary for unsupported controls.
+*   🐞 **[GitHub Repository & Issue Tracker](https://github.com/soulripper13/cozylife_local)**: Report bugs or device compatibility findings without sharing local IP addresses or device IDs.
