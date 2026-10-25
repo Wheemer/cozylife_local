@@ -364,11 +364,15 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Request the APK state payload appropriate for this device family."""
         if self._uses_sensor_polling:
             state_data = await self.device.async_get_status()
-        else:
-            state_data = await self.device.async_get_properties()
-        if state_data is None:
+            if state_data is None:
+                raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
+            return state_data
+
+        if not await self.device.async_request_properties():
             raise UpdateFailed(f"Failed to query state from device {self.device.ip_address}")
-        return state_data
+        # Powered-device frames are delivered asynchronously to the listener.
+        # Preserve the last complete state until the next frame arrives.
+        return dict(self.data or {})
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from device."""
@@ -391,10 +395,9 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     data={**self._entry.data, "ip_address": self.device.ip_address},
                 )
 
-            # The APK uses attr:[1] for sensor status and attr:[0] for the
-            # complete property state of powered products. Some metering
-            # products omit advertised fields from that response, so recovery
-            # performs one narrow request only for those absent fields.
+            # The APK uses attr:[1] for sensor status and attr:[0] for powered
+            # product state. Both are delivered as listener frames and may be
+            # partial.
             state_data = self._preserve_environment_measurements(state_data)
             _LOGGER.debug(f"[COZYLIFE] Successfully fetched state for {self.device.ip_address}: {state_data}")
             return state_data
