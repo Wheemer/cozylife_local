@@ -564,8 +564,9 @@ def test_udp_discovery_and_sleeping_sensor_wake_probe_are_separate() -> None:
 
 
 def test_partial_powered_report_reads_only_missing_advertised_dpids() -> None:
-    """A successful attr:[0] reply cannot suppress current or voltage reads."""
+    """A partial cached inventory cannot suppress current or voltage reads."""
     CozyLifeCoordinator = _load_coordinator()
+    import cozylife_local.coordinator as coordinator_module
 
     async def exercise() -> None:
         requested: list[list[str]] = []
@@ -579,7 +580,8 @@ def test_partial_powered_report_reads_only_missing_advertised_dpids() -> None:
             supports_plug_metering=True
         )
         coordinator.device = types.SimpleNamespace(
-            dpid=["1", "2", "26", "27", "28", "29", "42", "72"],
+            pid="known-metering-plug",
+            dpid=["1", "2", "26", "28", "42", "72"],
             async_get_state=async_get_state,
         )
         coordinator._powered_followup_task = None
@@ -589,9 +591,16 @@ def test_partial_powered_report_reads_only_missing_advertised_dpids() -> None:
             )
         )
 
-        coordinator._async_request_missing_powered_state(
-            {"1": True, "2": 0, "26": 1, "28": 3, "42": 2, "72": 0}
-        )
+        with patch.object(
+            coordinator_module,
+            "get_model_info",
+            lambda _pid: types.SimpleNamespace(
+                dpids=frozenset({"1", "2", "26", "27", "28", "29", "42", "72"})
+            ),
+        ):
+            coordinator._async_request_missing_powered_state(
+                {"1": True, "2": 0, "26": 1, "28": 3, "42": 2, "72": 0}
+            )
         await asyncio.sleep(0)
 
         assert requested == [["27", "29"]]
