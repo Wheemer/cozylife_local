@@ -366,6 +366,10 @@ class CozyLifeDevice:
         """Request APK status and await the next state frame, not a matching SN."""
         return await self._async_get_state([1])
 
+    async def async_get_state(self, dpids: list[str]) -> Optional[Dict[str, Any]]:
+        """Read a documented subset of locally advertised DPIDs."""
+        return await self._async_get_state([int(dpid) for dpid in dpids])
+
     async def async_request_properties(self) -> bool:
         """Request powered properties through the APK's listener-based path.
 

@@ -31,6 +31,7 @@ PLUG_POWER = '28'           # cur_power, scale 1, W
 PLUG_VOLTAGE = '29'         # cur_voltage, scale 1, V
 PLUG_OVERCURRENT_PROTECTION = '32'  # overcurrent protection enable flag
 PLUG_ENERGY = '42'          # total electricity consumption, raw value / 1000 kWh
+PLUG_TIMER_STATUS = '72'    # timer or last-off-status value
 
 # Supported device types (derived from old integration, actual support depends on pid_list)
 SWITCH_TYPE_CODE = '00'
