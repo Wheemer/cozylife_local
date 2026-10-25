@@ -27,6 +27,13 @@ def test_documentation_describes_current_transport_and_schedule_behavior() -> No
     assert "250 ms" in setup
     assert "no longer exposes schedules" not in coverage
     assert "Recurring schedules are Home Assistant-backed" in coverage
+    for heading in (
+        "### Fans",
+        "### Sensors and Safety Devices",
+        "### Energy Storage and Gateways",
+        "### Doorbells, Speakers, and AI Profiles",
+    ):
+        assert heading in readme
 
 
 def test_debug_documentation_matches_safe_logging_contract() -> None:
