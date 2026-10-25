@@ -46,6 +46,21 @@ def test_connection_refusal_is_retained_for_diagnostics() -> None:
     asyncio.run(exercise())
 
 
+def test_cached_known_product_uses_complete_apk_capability_inventory() -> None:
+    """A partial legacy cache cannot remove catalogue-backed plug entities."""
+    CozyLifeDevice = _load_api()
+    device = CozyLifeDevice("192.0.2.50")
+
+    device.restore_from_cache(
+        "plug-1",
+        "y98c24",
+        "00",
+        ["1", "2", "26", "28"],
+    )
+
+    assert {"27", "29"} <= set(device.dpid or [])
+
+
 def test_debug_frame_summary_excludes_identity_and_values() -> None:
     """Public debug output keeps protocol shape but no private frame content."""
     _load_api()
@@ -564,7 +579,7 @@ def test_udp_discovery_and_sleeping_sensor_wake_probe_are_separate() -> None:
 
 
 def test_partial_powered_report_reads_only_missing_advertised_dpids() -> None:
-    """A partial cached inventory cannot suppress current or voltage reads."""
+    """A partial cached inventory cannot suppress supported plug option reads."""
     CozyLifeCoordinator = _load_coordinator()
     import cozylife_local.coordinator as coordinator_module
 
@@ -577,7 +592,9 @@ def test_partial_powered_report_reads_only_missing_advertised_dpids() -> None:
         coordinator = object.__new__(CozyLifeCoordinator)
         coordinator._uses_sensor_polling = False
         coordinator.classification = types.SimpleNamespace(
-            supports_plug_metering=True
+            supports_switch_entities=True,
+            supports_plug_metering=True,
+            is_light=False,
         )
         coordinator.device = types.SimpleNamespace(
             pid="known-metering-plug",
@@ -595,7 +612,9 @@ def test_partial_powered_report_reads_only_missing_advertised_dpids() -> None:
             coordinator_module,
             "get_model_info",
             lambda _pid: types.SimpleNamespace(
-                dpids=frozenset({"1", "2", "26", "27", "28", "29", "42", "72"})
+                dpids=frozenset(
+                    {"1", "2", "18", "19", "26", "27", "28", "29", "32", "42", "72"}
+                )
             ),
         ):
             coordinator._async_request_missing_powered_state(
@@ -603,7 +622,45 @@ def test_partial_powered_report_reads_only_missing_advertised_dpids() -> None:
             )
         await asyncio.sleep(0)
 
-        assert requested == [["27", "29"]]
+        assert requested == [["18", "19", "27", "29", "32"]]
+        assert coordinator._powered_followup_task is None
+
+    asyncio.run(exercise())
+
+
+def test_partial_light_report_reads_catalogued_countdown() -> None:
+    """A light's retained countdown entity receives its missing state."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        requested: list[list[str]] = []
+
+        async def async_get_state(dpids: list[str]) -> None:
+            requested.append(dpids)
+
+        coordinator = object.__new__(CozyLifeCoordinator)
+        coordinator._uses_sensor_polling = False
+        coordinator.classification = types.SimpleNamespace(
+            supports_switch_entities=False,
+            supports_plug_metering=False,
+            is_light=True,
+        )
+        coordinator.device = types.SimpleNamespace(
+            pid="light-1",
+            dpid=["1", "4", "13"],
+            async_get_state=async_get_state,
+        )
+        coordinator._powered_followup_task = None
+        coordinator.hass = types.SimpleNamespace(
+            async_create_background_task=lambda coroutine, _name: asyncio.create_task(
+                coroutine
+            )
+        )
+
+        coordinator._async_request_missing_powered_state({"1": True, "4": 300})
+        await asyncio.sleep(0)
+
+        assert requested == [["13"]]
         assert coordinator._powered_followup_task is None
 
     asyncio.run(exercise())

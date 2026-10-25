@@ -76,11 +76,17 @@ but a successful response may be partial.  A transport change is incomplete
 unless it preserves all of the following:
 
 - Keep previously received DPID state when a later listener report is partial.
+- Build every known product's capability inventory by merging observed/cached
+  DPIDs with its verified APK catalogue profile. This happens at device
+  inventory time, before platform setup, so old config entries and new
+  discovery entries expose the same supported entity set.
 - For a supported plug, request only the catalogue-advertised metering and
-  option DPIDs omitted from the `attr:[0]` report. Merge the persisted DPID
-  cache with the verified APK catalogue profile first: a cache restored after
-  an update can itself be partial. Do not treat a successful `res:0` as proof
-  that every advertised DPID was returned.
+  option DPIDs omitted from the `attr:[0]` report. Do not treat a successful
+  `res:0` as proof that every advertised DPID was returned.
+- Retain the complete fallback policy for currently exposed powered entities:
+  power-on state, LED status, overcurrent protection, Current, timer status,
+  Voltage, and light countdown. Deliberately excluded schedule controls remain
+  outside that policy because the integration no longer exposes schedules.
 - Expose DPID 26 (**Energy**) independently from DPID 42 (**Total energy**)
   when both are advertised; neither entity may suppress the other.
 - Before release, compare the powered-device DPID and fallback path against
@@ -89,6 +95,19 @@ unless it preserves all of the following:
 
 This is an evidence-preservation rule, not a product-specific workaround: the
 fallback is limited to DPIDs already advertised by the local product catalogue.
+
+### 1.0.16 powered-path preservation audit
+
+| Retained entity family | Targeted fallback DPIDs |
+| --- | --- |
+| Switch configuration | 18 power-on state, 19 LED status, 32 overcurrent protection |
+| Plug telemetry/options | 27 Current, 29 Voltage, 72 timer status |
+| Light configuration | 13 countdown |
+
+The old DPID 3 schedule fallback is deliberately absent: schedules and their
+time/select/service surfaces were removed from the integration scope. All
+other powered fallback fields from the prior working implementation remain
+covered by the listener-safe, catalogue-backed mechanism above.
 
 ## Transport rule
 

@@ -15,6 +15,7 @@ from .const import (
     PLUG_POWER_ON_STATE,
     PLUG_TIMER_STATUS,
     PLUG_VOLTAGE,
+    LIGHT_COUNTDOWN,
     SENSOR_HUMIDITY,
     SENSOR_TEMPERATURE,
 )
@@ -33,13 +34,15 @@ ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
 }
-POWERED_FOLLOWUP_DPIDS = (
+SWITCH_OPTION_FOLLOWUP_DPIDS = (
     PLUG_POWER_ON_STATE,
     PLUG_LED_STATUS,
+    PLUG_OVERCURRENT_PROTECTION,
+)
+PLUG_METERING_FOLLOWUP_DPIDS = (
     PLUG_CURRENT,
     PLUG_TIMER_STATUS,
     PLUG_VOLTAGE,
-    PLUG_OVERCURRENT_PROTECTION,
 )
 
 
@@ -325,11 +328,10 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         partial plug state response. Keep it scoped to advertised plug fields;
         it does not probe unknown product capabilities.
         """
+        classification = getattr(self, "classification", None)
         if (
             self._uses_sensor_polling
-            or not getattr(
-                getattr(self, "classification", None), "supports_plug_metering", False
-            )
+            or classification is None
             or getattr(self, "_powered_followup_task", None) is not None
         ):
             return
@@ -342,9 +344,17 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         model_info = get_model_info(self.device.pid)
         if model_info is not None:
             advertised_dpids.update(model_info.dpids)
+        candidate_dpids: set[str] = set()
+        if classification.supports_switch_entities:
+            candidate_dpids.update(SWITCH_OPTION_FOLLOWUP_DPIDS)
+        if classification.supports_plug_metering:
+            candidate_dpids.update(PLUG_METERING_FOLLOWUP_DPIDS)
+        if classification.is_light:
+            candidate_dpids.add(LIGHT_COUNTDOWN)
+
         missing_dpids = [
             dpid
-            for dpid in POWERED_FOLLOWUP_DPIDS
+            for dpid in sorted(candidate_dpids, key=int)
             if dpid in advertised_dpids and dpid not in received_state
         ]
         if not missing_dpids:

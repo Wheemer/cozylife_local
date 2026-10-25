@@ -102,15 +102,32 @@ class CozyLifeDevice:
         return True
 
     def restore_from_cache(self, device_id: str, pid: str, device_type_code: str, dpids: List[str]) -> None:
-        """Restore device info from cached config entry data without contacting the device."""
+        """Restore local identity and its verified capability inventory."""
         model_info = get_model_info(pid)
         self._device_id = device_id
         self._pid = pid
         self._device_type_code = device_type_code
-        self._dpid = dpids
+        self._dpid = self._catalog_backed_dpids(dpids, model_info)
         self._device_model_name = (
             model_info.model_name if model_info else f"CozyLife Device ({pid})"
         )
+
+    @staticmethod
+    def _catalog_backed_dpids(
+        dpids: List[str],
+        model_info: Any,
+    ) -> List[str]:
+        """Return the complete verified capability inventory for a known PID.
+
+        A local attr:[0] inventory can be partial, and older config entries
+        persist that partial list.  The APK model catalogue is the supported
+        capability source for a known product; merge it with observed DPIDs so
+        platform setup and targeted reads use the same inventory.
+        """
+        capability_dpids = {str(dpid) for dpid in dpids}
+        if model_info is not None:
+            capability_dpids.update(str(dpid) for dpid in model_info.dpids)
+        return sorted(capability_dpids, key=int)
 
     async def _connect(self) -> None:
         """Open one socket and retain it for the device's receive stream.
@@ -344,15 +361,16 @@ class CozyLifeDevice:
         if not query_msg:
             _LOGGER.warning("Failed to query DPID list from CozyLife device")
             # We can still proceed with a minimal setup if this fails
-            self._dpid = []
+            self._dpid = self._catalog_backed_dpids([], model_info)
             return True # Return true as we have the basic info
 
         if 'attr' in query_msg:
-            self._dpid = [str(dpid) for dpid in query_msg['attr']]
+            observed_dpids = [str(dpid) for dpid in query_msg['attr']]
         elif 'data' in query_msg:
-            self._dpid = [str(dpid) for dpid in query_msg['data']]
+            observed_dpids = [str(dpid) for dpid in query_msg['data']]
         else:
-            self._dpid = []
+            observed_dpids = []
+        self._dpid = self._catalog_backed_dpids(observed_dpids, model_info)
 
         _LOGGER.info(
             "Successfully discovered CozyLife device locally: PID=%s, Type=%s, DPIDs=%s",
