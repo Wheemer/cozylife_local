@@ -51,7 +51,7 @@ We are still looking for reports to expand coverage for:
 *   🧭 **Visible Device IP Diagnostics**: Exposes each configured device's local IP address as a diagnostic sensor in Home Assistant, making router checks and troubleshooting easier.
 *   🎛️ **Multi-Gang Switch Bitmasks**: Native, low-level bitmask control on DPID 1 ensures multi-gang rockers (e.g., double or triple rocker switches) act as individual, responsive entities.
 *   🧩 **Switch Option Controls**: Exposes Power-on State, LED Status, and overcurrent protection controls only where the individual device reports the required DPIDs.
-*   📈 **Smart Energy Metering**: Exposes voltage, current, active power, and cumulative energy sensors (compatible with the HA Energy Dashboard), plus supported countdown and plug option controls.
+*   📈 **Smart Energy Metering**: Exposes voltage, current, active power, and separate device-reported energy counters (compatible with the HA Energy Dashboard), plus supported countdown and plug option controls.
 *   🔊 **Local Speaker Control**: The APK-catalogued Wi-Fi X7 speaker profiles expose local power, volume, play/pause, and Bluetooth, local-playback, or line-in source controls through one Home Assistant media player.
 *   💡 **State & Color-Mode Safeguards**: Smooth transitions and automatic work-mode state preservation prevents smart lights from glitching or flashing dark blue during custom RGB commands.
 *   🕒 **Light Countdowns**: Exposes validated local countdown controls on compatible bulbs.
@@ -124,7 +124,7 @@ an invented appliance type.
 
 Metered plugs expose outlet control plus electricity sensors:
 
-*   **Energy** (`DPID 26`) and **Total energy** (`DPID 42`) independently, when reported, as kWh using `/1000`
+*   **Energy** (`DPID 26`) and **Total energy** (`DPID 42`) independently, when reported, as kWh using `/1000`. Their reset behavior is device-specific.
 *   **Current** (`DPID 27`) as raw mA
 *   **Power** (`DPID 28`) as raw W
 *   **Voltage** (`DPID 29`) as raw V

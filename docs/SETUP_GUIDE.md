@@ -126,7 +126,7 @@ Our integration supports both standard on/off plugs and high-end smart plugs equ
     *   **Voltage** (V) - `sensor.cozylife_device_voltage`
     *   **Current** (mA) - `sensor.cozylife_device_current`
     *   **Active Power** (W) - `sensor.cozylife_device_power`
-    *   **Total Cumulative Energy** (kWh) - `sensor.cozylife_device_energy`
+*   **Device-reported Energy** (kWh) - `sensor.cozylife_device_energy`
 *   **Home Assistant Energy Dashboard**: The energy entity (`sensor.cozylife_device_energy`) utilizes standard `device_class: energy` and `state_class: total_increasing`. You can directly add it to the Home Assistant Energy Dashboard to track historical consumption!
 
 If a compatible plug reports both DPID 26 (**Energy**) and DPID 42 (**Total energy**), the integration exposes them independently. Do not assume the two counters have the same source or reset behavior.
