@@ -7,6 +7,7 @@ import importlib.util
 import json
 import sys
 import types
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -93,6 +94,9 @@ def _load_coordinator():
     update_coordinator = types.ModuleType("homeassistant.helpers.update_coordinator")
 
     class DataUpdateCoordinator:
+        def __init__(self, *_args, update_interval=None, **_kwargs) -> None:
+            self.update_interval = update_interval
+
         @classmethod
         def __class_getitem__(cls, _item):
             return cls
@@ -1507,6 +1511,55 @@ def test_environment_report_accepts_a_valid_partial_measurement() -> None:
     assert coordinator._has_valid_environment_measurements({"4": 48})
     assert not coordinator._has_valid_environment_measurements({"8": 0})
     assert not coordinator._has_valid_environment_measurements({"4": 0})
+
+
+def test_powered_device_keeps_periodic_availability_refresh() -> None:
+    """A powered light must become unavailable after a local power cut."""
+    CozyLifeCoordinator = _load_coordinator()
+    coordinator_module = sys.modules["cozylife_local.coordinator"]
+    original_classify = coordinator_module.classify_device
+    coordinator_module.classify_device = lambda *_args: types.SimpleNamespace(
+        is_environment_sensor=False
+    )
+    try:
+        device = types.SimpleNamespace(
+            pid="light",
+            device_type_code="00",
+            dpid=["1"],
+            ip_address="192.0.2.50",
+            set_message_listener=lambda _listener: None,
+        )
+        coordinator = CozyLifeCoordinator(
+            types.SimpleNamespace(), device, types.SimpleNamespace()
+        )
+        assert coordinator.update_interval == timedelta(seconds=30)
+    finally:
+        coordinator_module.classify_device = original_classify
+
+
+def test_powered_refresh_requires_a_state_frame() -> None:
+    """A successful socket write alone cannot keep a powered light available."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        coordinator = object.__new__(CozyLifeCoordinator)
+        coordinator._uses_sensor_polling = False
+        requested_dpids: list[list[str]] = []
+
+        async def async_get_state(dpids: list[str]):
+            requested_dpids.append(dpids)
+            return None
+
+        coordinator.device = types.SimpleNamespace(async_get_state=async_get_state)
+        try:
+            await coordinator._async_get_local_state()
+        except RuntimeError as err:
+            assert str(err) == "Failed to query state from CozyLife device"
+        else:
+            raise AssertionError("Missing powered state frame must fail refresh")
+        assert requested_dpids == [["0"]]
+
+    asyncio.run(exercise())
 
 
 def test_powered_udp_announcement_queues_one_gated_refresh() -> None:
