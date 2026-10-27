@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -30,6 +31,7 @@ _UPDATE_LOGGER.setLevel(logging.INFO)
 # These are local attempt bounds, not a claimed sensor wake or report schedule.
 SENSOR_CONNECT_TIMEOUT_SECONDS = 0.2
 SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.25
+POWERED_DEVICE_AVAILABILITY_INTERVAL = timedelta(seconds=30)
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
@@ -89,10 +91,17 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # probing outside DataUpdateCoordinator: it uses the configured local
         # address while UDP discovery independently refreshes that address.
         #
-        # Powered device requests are gated by a matching UDP announcement,
-        # as the APK's Wi-Fi sender only queues messages for devices in its
-        # UDP presence cache.
-        interval = None
+        # The APK's UDP presence cache decides when its app queues a command;
+        # it has no equivalent of Home Assistant's entity availability.
+        # Keep a bounded HA-side local health refresh for powered products so
+        # a device that is physically powered off becomes unavailable again.
+        # Sleeping sensors retain their separate wake-window task and are not
+        # subjected to this periodic availability probe.
+        interval = (
+            None
+            if self._uses_sensor_polling
+            else POWERED_DEVICE_AVAILABILITY_INTERVAL
+        )
 
         super().__init__(
             hass,
@@ -433,11 +442,14 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise UpdateFailed("Failed to query state from CozyLife device")
             return state_data
 
-        if not await self.device.async_request_properties():
+        # A local write alone is not evidence that a powered device is still
+        # present: TCP can accept a write briefly after a physical power cut.
+        # Await the APK's ``attr:[0]`` state frame so a missed frame marks the
+        # coordinator unavailable on its next health refresh.
+        state_data = await self.device.async_get_state(["0"])
+        if state_data is None:
             raise UpdateFailed("Failed to query state from CozyLife device")
-        # Powered-device frames are delivered asynchronously to the listener.
-        # Preserve the last complete state until the next frame arrives.
-        return dict(self.data or {})
+        return state_data
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from device."""
