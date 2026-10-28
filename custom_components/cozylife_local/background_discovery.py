@@ -30,6 +30,9 @@ DATA_DISCOVERY_STOP_UNSUB = "background_udp_discovery_stop_unsub"
 # its own cadence.
 DISCOVERY_BROADCAST_INTERVAL_SECONDS = 10.0
 APK_NETWORK_CHANGE_BROADCAST_COUNT = 1
+# WifiUdpServer.isLocalhostOnline() expires an announced device after 15 s.
+# Keep the same presence boundary before issuing a powered-device health read.
+APK_LOCAL_PRESENCE_CACHE_SECONDS = 15.0
 
 
 @dataclass(frozen=True)
@@ -154,6 +157,27 @@ class CozyLifeBackgroundDiscovery:
         cached = getattr(self, "_devices", {}).get(device_id)
         if cached is not None:
             self.hass.async_create_task(callback(cached[0].ip_address))
+
+    def is_device_present(self, device_id: str | None, ip_address: str) -> bool:
+        """Return whether an APK-style UDP announcement is still fresh.
+
+        The Android app only queues a local Wi-Fi TCP message while its
+        WifiUdpServer cache contains the device.  That cache expires entries
+        15 seconds after their most recent UDP announcement.
+        """
+        if not device_id:
+            return False
+        cached = self._devices.get(device_id)
+        if cached is None:
+            return False
+        device, received_at = cached
+        if (
+            device.ip_address != ip_address
+            or time.monotonic() - received_at > APK_LOCAL_PRESENCE_CACHE_SECONDS
+        ):
+            self._devices.pop(device_id, None)
+            return False
+        return True
 
     def unregister_device(self, device_id: str, entry_id: str) -> None:
         """Stop routing replies only when this entry owns the registration."""

@@ -470,5 +470,14 @@ class CozyLifeDevice:
             return None
 
     async def async_set_state(self, attributes: Dict[str, Any]) -> bool:
-        """Write a local property update using the APK's send-success semantics."""
-        return await self._async_send(CMD_SET, attributes)
+        """Write a local property update through the shared writer queue.
+
+        The APK serializes Wi-Fi reads and writes through WifiWriteTcpClient.
+        In particular, a periodic availability read must not interleave bytes
+        or response ownership with a user-initiated switch command.
+        """
+        if self._status_lock is None:
+            self._status_lock = asyncio.Lock()
+
+        async with self._status_lock:
+            return await self._async_send(CMD_SET, attributes)
