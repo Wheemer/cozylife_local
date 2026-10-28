@@ -442,14 +442,21 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise UpdateFailed("Failed to query state from CozyLife device")
             return state_data
 
-        # A local write alone is not evidence that a powered device is still
-        # present: TCP can accept a write briefly after a physical power cut.
-        # Await the APK's ``attr:[0]`` state frame so a missed frame marks the
-        # coordinator unavailable on its next health refresh.
-        state_data = await self.device.async_get_state(["0"])
-        if state_data is None:
-            raise UpdateFailed("Failed to query state from CozyLife device")
-        return state_data
+        discovery = await async_get_background_discovery(self.hass)
+        if not discovery.is_device_present(
+            self.device.device_id, self.device.ip_address
+        ):
+            raise UpdateFailed("CozyLife device is not present on local UDP")
+
+        # The APK queues ``attr:[0]`` as a local write and routes a later
+        # state frame to the device listener; it does not make this command
+        # contingent on a correlated or immediate state reply. UDP presence
+        # is the availability evidence here. Waiting for a state frame was
+        # introduced in 1.1.3 and can hold the shared writer lock long enough
+        # to delay a user control command.
+        if not await self.device.async_request_properties():
+            raise UpdateFailed("Failed to request state from CozyLife device")
+        return dict(self.data or {})
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from device."""

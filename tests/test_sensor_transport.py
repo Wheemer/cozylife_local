@@ -794,6 +794,29 @@ def test_registering_a_known_device_routes_the_cached_address() -> None:
     asyncio.run(exercise())
 
 
+def test_powered_udp_presence_matches_the_apk_fifteen_second_cache() -> None:
+    """A powered-device read is gated by the APK cache lifetime."""
+    background_discovery = _load_background_discovery()
+    service = object.__new__(background_discovery.CozyLifeBackgroundDiscovery)
+    service._devices = {
+        "plug-1": (
+            background_discovery.UdpDiscoveredDevice(
+                device_id="plug-1",
+                ip_address="10.0.0.42",
+                pid="hjk1jk",
+                device_type_code="05",
+            ),
+            100.0,
+        )
+    }
+
+    with patch.object(background_discovery.time, "monotonic", return_value=115.0):
+        assert service.is_device_present("plug-1", "10.0.0.42")
+    with patch.object(background_discovery.time, "monotonic", return_value=115.01):
+        assert not service.is_device_present("plug-1", "10.0.0.42")
+    assert service._devices == {}
+
+
 def test_shared_udp_listener_creation_is_serialized() -> None:
     """Concurrent entry setup must not create two UDP receive sockets."""
     background_discovery = _load_background_discovery()
@@ -1075,6 +1098,43 @@ def test_property_write_succeeds_without_a_correlated_reply() -> None:
             await device.async_close()
             server.close()
             await server.wait_closed()
+
+    asyncio.run(exercise())
+
+
+def test_switch_write_waits_for_an_inflight_availability_read() -> None:
+    """The APK's one Wi-Fi writer queue prevents read/write interleaving."""
+    CozyLifeDevice = _load_api()
+
+    async def exercise() -> None:
+        device = CozyLifeDevice("192.0.2.50", timeout=1.0)
+        read_started = asyncio.Event()
+        release_read = asyncio.Event()
+        writes: list[dict[str, bool]] = []
+
+        async def request_state(_attributes, *, wait_for_state):
+            assert wait_for_state is True
+            read_started.set()
+            await release_read.wait()
+            return {"1": True}
+
+        async def send_state(_command, attributes):
+            writes.append(attributes)
+            return True
+
+        device._async_request_state = request_state
+        device._async_send = send_state
+
+        read_task = asyncio.create_task(device.async_get_state(["0"]))
+        await read_started.wait()
+        write_task = asyncio.create_task(device.async_set_state({"1": False}))
+        await asyncio.sleep(0)
+        assert not write_task.done()
+
+        release_read.set()
+        assert await read_task == {"1": True}
+        assert await write_task is True
+        assert writes == [{"1": False}]
 
     asyncio.run(exercise())
 
@@ -1537,27 +1597,84 @@ def test_powered_device_keeps_periodic_availability_refresh() -> None:
         coordinator_module.classify_device = original_classify
 
 
-def test_powered_refresh_requires_a_state_frame() -> None:
-    """A successful socket write alone cannot keep a powered light available."""
+def test_powered_refresh_uses_the_apk_listener_path() -> None:
+    """A powered refresh writes attr:[0] and keeps the listener-owned state."""
     CozyLifeCoordinator = _load_coordinator()
 
     async def exercise() -> None:
         coordinator = object.__new__(CozyLifeCoordinator)
         coordinator._uses_sensor_polling = False
-        requested_dpids: list[list[str]] = []
+        coordinator.hass = object()
+        requests = 0
 
-        async def async_get_state(dpids: list[str]):
-            requested_dpids.append(dpids)
-            return None
+        async def async_request_properties() -> bool:
+            nonlocal requests
+            requests += 1
+            return True
 
-        coordinator.device = types.SimpleNamespace(async_get_state=async_get_state)
-        try:
-            await coordinator._async_get_local_state()
-        except RuntimeError as err:
-            assert str(err) == "Failed to query state from CozyLife device"
-        else:
-            raise AssertionError("Missing powered state frame must fail refresh")
-        assert requested_dpids == [["0"]]
+        coordinator.device = types.SimpleNamespace(
+            device_id="plug-1",
+            ip_address="192.0.2.50",
+            async_request_properties=async_request_properties,
+        )
+        coordinator.data = {"1": True, "28": 12}
+
+        class Discovery:
+            def is_device_present(self, _device_id, _ip_address):
+                return True
+
+        async def get_discovery(_hass):
+            return Discovery()
+
+        coordinator_module = sys.modules["cozylife_local.coordinator"]
+        with patch.object(
+            coordinator_module, "async_get_background_discovery", get_discovery
+        ):
+            assert await coordinator._async_get_local_state() == {"1": True, "28": 12}
+        assert requests == 1
+
+    asyncio.run(exercise())
+
+
+def test_powered_refresh_requires_fresh_apk_udp_presence() -> None:
+    """The availability timer cannot bypass the APK's UDP presence gate."""
+    CozyLifeCoordinator = _load_coordinator()
+
+    async def exercise() -> None:
+        coordinator = object.__new__(CozyLifeCoordinator)
+        coordinator._uses_sensor_polling = False
+        coordinator.hass = object()
+        queried = False
+
+        async def async_get_state(_dpids):
+            nonlocal queried
+            queried = True
+            return {"1": True}
+
+        coordinator.device = types.SimpleNamespace(
+            device_id="plug-1",
+            ip_address="192.0.2.50",
+            async_get_state=async_get_state,
+        )
+
+        class Discovery:
+            def is_device_present(self, _device_id, _ip_address):
+                return False
+
+        async def get_discovery(_hass):
+            return Discovery()
+
+        coordinator_module = sys.modules["cozylife_local.coordinator"]
+        with patch.object(
+            coordinator_module, "async_get_background_discovery", get_discovery
+        ):
+            try:
+                await coordinator._async_get_local_state()
+            except RuntimeError as err:
+                assert str(err) == "CozyLife device is not present on local UDP"
+            else:
+                raise AssertionError("Stale UDP presence must fail refresh")
+        assert queried is False
 
     asyncio.run(exercise())
 
