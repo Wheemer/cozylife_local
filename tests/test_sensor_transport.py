@@ -1102,8 +1102,37 @@ def test_property_write_succeeds_without_a_correlated_reply() -> None:
     asyncio.run(exercise())
 
 
-def test_switch_write_waits_for_an_inflight_availability_read() -> None:
-    """The APK's one Wi-Fi writer queue prevents read/write interleaving."""
+def test_property_write_times_out_when_a_socket_stalls_during_flush() -> None:
+    """A stalled local writer cannot leave an interactive command hung."""
+    CozyLifeDevice = _load_api()
+
+    class StalledWriter:
+        closed = False
+
+        def is_closing(self) -> bool:
+            return self.closed
+
+        def write(self, _data: bytes) -> None:
+            return None
+
+        async def drain(self) -> None:
+            await asyncio.Event().wait()
+
+        def close(self) -> None:
+            self.closed = True
+
+    async def exercise() -> None:
+        device = CozyLifeDevice("192.0.2.50", timeout=0.01)
+        writer = StalledWriter()
+        device._writer = writer
+        assert await device.async_set_state({"1": False}) is False
+        assert writer.closed
+
+    asyncio.run(exercise())
+
+
+def test_switch_write_does_not_wait_for_an_inflight_availability_read() -> None:
+    """A background health read must not add latency to an ON/OFF command."""
     CozyLifeDevice = _load_api()
 
     async def exercise() -> None:
@@ -1127,14 +1156,11 @@ def test_switch_write_waits_for_an_inflight_availability_read() -> None:
 
         read_task = asyncio.create_task(device.async_get_state(["0"]))
         await read_started.wait()
-        write_task = asyncio.create_task(device.async_set_state({"1": False}))
-        await asyncio.sleep(0)
-        assert not write_task.done()
+        assert await device.async_set_state({"1": False}) is True
+        assert writes == [{"1": False}]
 
         release_read.set()
         assert await read_task == {"1": True}
-        assert await write_task is True
-        assert writes == [{"1": False}]
 
     asyncio.run(exercise())
 
@@ -1607,8 +1633,9 @@ def test_powered_refresh_uses_the_apk_listener_path() -> None:
         coordinator.hass = object()
         requests = 0
 
-        async def async_request_properties() -> bool:
+        async def async_request_properties(*, timeout: float | None = None) -> bool:
             nonlocal requests
+            assert timeout == 1.0
             requests += 1
             return True
 
@@ -1644,17 +1671,18 @@ def test_powered_refresh_requires_fresh_apk_udp_presence() -> None:
         coordinator = object.__new__(CozyLifeCoordinator)
         coordinator._uses_sensor_polling = False
         coordinator.hass = object()
-        queried = False
+        requested = False
 
-        async def async_get_state(_dpids):
-            nonlocal queried
-            queried = True
-            return {"1": True}
+        async def async_request_properties(*, timeout: float | None = None) -> bool:
+            nonlocal requested
+            assert timeout == 1.0
+            requested = True
+            return False
 
         coordinator.device = types.SimpleNamespace(
             device_id="plug-1",
             ip_address="192.0.2.50",
-            async_get_state=async_get_state,
+            async_request_properties=async_request_properties,
         )
 
         class Discovery:
@@ -1674,7 +1702,7 @@ def test_powered_refresh_requires_fresh_apk_udp_presence() -> None:
                 assert str(err) == "CozyLife device is not present on local UDP"
             else:
                 raise AssertionError("Stale UDP presence must fail refresh")
-        assert queried is False
+        assert requested is False
 
     asyncio.run(exercise())
 
