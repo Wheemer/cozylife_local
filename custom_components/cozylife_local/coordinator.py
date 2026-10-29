@@ -32,6 +32,10 @@ _UPDATE_LOGGER.setLevel(logging.INFO)
 SENSOR_CONNECT_TIMEOUT_SECONDS = 0.2
 SENSOR_WAKE_PROBE_INTERVAL_SECONDS = 0.25
 POWERED_DEVICE_AVAILABILITY_INTERVAL = timedelta(seconds=30)
+# The APK uses a one-second TCP connection allowance. Apply that bound only
+# to background health work; interactive commands keep the device's normal
+# timeout and are never intentionally slowed by availability polling.
+POWERED_DEVICE_AVAILABILITY_TIMEOUT_SECONDS = 1.0
 ENVIRONMENT_SENSOR_MEASUREMENTS = {
     SENSOR_TEMPERATURE: "temperature",
     SENSOR_HUMIDITY: "humidity",
@@ -454,7 +458,9 @@ class CozyLifeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # is the availability evidence here. Waiting for a state frame was
         # introduced in 1.1.3 and can hold the shared writer lock long enough
         # to delay a user control command.
-        if not await self.device.async_request_properties():
+        if not await self.device.async_request_properties(
+            timeout=POWERED_DEVICE_AVAILABILITY_TIMEOUT_SECONDS
+        ):
             raise UpdateFailed("Failed to request state from CozyLife device")
         return dict(self.data or {})
 

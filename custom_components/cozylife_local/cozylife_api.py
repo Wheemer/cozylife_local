@@ -129,7 +129,7 @@ class CozyLifeDevice:
             capability_dpids.update(str(dpid) for dpid in model_info.dpids)
         return sorted(capability_dpids, key=int)
 
-    async def _connect(self) -> None:
+    async def _connect(self, *, timeout: float | None = None) -> None:
         """Open one socket and retain it for the device's receive stream.
 
         Cozy Life's Android app has a dedicated TCP reader over its socket pool.
@@ -148,7 +148,7 @@ class CozyLifeDevice:
                 _RAW_LOGGER.debug("Opening persistent CozyLife socket")
                 reader, writer = await asyncio.wait_for(
                     asyncio.open_connection(self._ip_address, COZYLIFE_PORT),
-                    timeout=self._timeout,
+                    timeout=self._timeout if timeout is None else timeout,
                 )
             except (asyncio.TimeoutError, ConnectionRefusedError, OSError) as err:
                 self._last_transport_error = type(err).__name__
@@ -300,7 +300,7 @@ class CozyLifeDevice:
             ).encode("utf8")
             _RAW_LOGGER.debug("Sending CozyLife frame: %s", summarize_frame(encoded_message))
             writer.write(encoded_message)
-            await writer.drain()
+            await asyncio.wait_for(writer.drain(), timeout=self._timeout)
             return True
         except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
             self._disconnect()
@@ -388,7 +388,7 @@ class CozyLifeDevice:
         """Read a documented subset of locally advertised DPIDs."""
         return await self._async_get_state([int(dpid) for dpid in dpids])
 
-    async def async_request_properties(self) -> bool:
+    async def async_request_properties(self, *, timeout: float | None = None) -> bool:
         """Request powered properties through the APK's listener-based path.
 
         The CozyLife Wi-Fi client sends ``attr:[0]`` and routes the next local
@@ -400,8 +400,11 @@ class CozyLifeDevice:
 
         async with self._status_lock:
             return (
-                await self._async_request_state([0], wait_for_state=False)
-            ) is not None
+                await self._async_request_state(
+                    [0], wait_for_state=False, transport_timeout=timeout
+                )
+                is not None
+            )
 
     async def _async_get_state(self, attributes: list[int]) -> Optional[Dict[str, Any]]:
         """Request the selected APK state payload and await its state frame."""
@@ -428,10 +431,12 @@ class CozyLifeDevice:
         attributes: list[int],
         *,
         wait_for_state: bool,
+        transport_timeout: float | None = None,
     ) -> Optional[Dict[str, Any]]:
         """Use the APK write-and-listen state path over one durable socket."""
         try:
-            await self._connect()
+            timeout = self._timeout if transport_timeout is None else transport_timeout
+            await self._connect(timeout=timeout)
             writer = self._writer
             if writer is None:
                 return None
@@ -447,14 +452,14 @@ class CozyLifeDevice:
             ).encode("utf8")
             _RAW_LOGGER.debug("Sending CozyLife frame: %s", summarize_frame(encoded_message))
             writer.write(encoded_message)
-            await writer.drain()
+            await asyncio.wait_for(writer.drain(), timeout=timeout)
 
             if state_waiter is None:
                 return {}
 
             try:
                 state_data = await asyncio.wait_for(
-                    asyncio.shield(state_waiter), timeout=self._timeout
+                    asyncio.shield(state_waiter), timeout=timeout
                 )
                 return state_data or None
             except asyncio.TimeoutError:
@@ -470,14 +475,12 @@ class CozyLifeDevice:
             return None
 
     async def async_set_state(self, attributes: Dict[str, Any]) -> bool:
-        """Write a local property update through the shared writer queue.
+        """Write a user command without waiting behind availability work.
 
-        The APK serializes Wi-Fi reads and writes through WifiWriteTcpClient.
-        In particular, a periodic availability read must not interleave bytes
-        or response ownership with a user-initiated switch command.
+        ``StreamWriter.write`` appends one complete framed command before its
+        first await, so a CMD_SET cannot interleave bytes with the periodic
+        ``attr:[0]`` request.  It must not share the refresh lock: a stalled
+        availability connection otherwise delays an interactive ON/OFF action
+        for the complete local TCP timeout.
         """
-        if self._status_lock is None:
-            self._status_lock = asyncio.Lock()
-
-        async with self._status_lock:
-            return await self._async_send(CMD_SET, attributes)
+        return await self._async_send(CMD_SET, attributes)
